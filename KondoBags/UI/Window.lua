@@ -34,15 +34,27 @@ end
 -- frame
 -- ---------------------------------------------------------------------------
 local function ApplyBackdrop(f, theme)
-  if not f.SetBackdrop then return end
+  if not f.SetBackdrop or not theme.backdrop then return end
   f:SetBackdrop(theme.backdrop)
   if theme.backdropColor then f:SetBackdropColor(unpack(theme.backdropColor)) end
   if theme.backdropBorderColor then f:SetBackdropBorderColor(unpack(theme.backdropBorderColor)) end
 end
 
-local function CreateWindow()
-  if frame then return frame end
-  frame = CreateFrame("Frame", "KondoBagsWindow", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+-- The window is created once per theme *family*: Blizzard's PortraitFrameTemplate (stock look)
+-- cannot be turned into a flat backdrop frame after the fact, so switching between a template
+-- theme and a backdrop theme rebuilds the frame. Cells are re-parented onto the new Grid.
+local function FrameTemplateFor(theme)
+  if theme.frameTemplate then return theme.frameTemplate end
+  return BackdropTemplateMixin and "BackdropTemplate" or nil
+end
+
+local function CreateWindow(theme)
+  theme = theme or Theme_()
+  local template = FrameTemplateFor(theme)
+  if frame and frame.kbTemplate == template then return frame end
+  local old = frame
+  frame = CreateFrame("Frame", "KondoBagsWindow" .. (old and "2" or ""), UIParent, template)
+  frame.kbTemplate = template
   frame:SetFrameStrata("MEDIUM")
   frame:SetToplevel(true)
   frame:SetClampedToScreen(true)
@@ -51,19 +63,29 @@ local function CreateWindow()
   frame:SetPoint("CENTER")
   frame:Hide()
 
-  frame.Portrait = frame:CreateTexture(nil, "ARTWORK")
-  frame.Portrait:SetSize(40, 40)
-  frame.Portrait:SetPoint("TOPLEFT", 4, -4)
-  frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
-  if frame.Portrait.SetMask then frame.Portrait:SetMask("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask") end
-
-  frame.Title = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-  frame.Title:SetPoint("TOP", 0, -14)
-  frame.Title:SetText("KondoBags")
-
-  frame.Close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  frame.Close:SetPoint("TOPRIGHT", 2, 2)
-  frame.Close:SetScript("OnClick", function() Window.Hide() end)
+  if theme.frameTemplate then
+    -- Blizzard portrait frame: it already has NineSlice, Bg, TitleContainer.TitleText, PortraitContainer.portrait,
+    -- CloseButton. Use its own pieces so the look is exactly the client's.
+    frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
+    if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
+    elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
+    frame.Title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
+    if frame.SetTitle then frame:SetTitle("KondoBags") elseif frame.Title then frame.Title:SetText("KondoBags") end
+    frame.Close = frame.CloseButton
+    if frame.Close then frame.Close:SetScript("OnClick", function() Window.Hide() end) end
+  else
+    frame.Portrait = frame:CreateTexture(nil, "ARTWORK")
+    frame.Portrait:SetSize(40, 40)
+    frame.Portrait:SetPoint("TOPLEFT", 4, -4)
+    frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
+    if frame.Portrait.SetMask then frame.Portrait:SetMask("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask") end
+    frame.Title = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    frame.Title:SetPoint("TOP", 0, -14)
+    frame.Title:SetText("KondoBags")
+    frame.Close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
+    frame.Close:SetPoint("TOPRIGHT", 2, 2)
+    frame.Close:SetScript("OnClick", function() Window.Hide() end)
+  end
 
   frame.Search = CreateFrame("EditBox", "KondoBagsSearchBox", frame, "SearchBoxTemplate")
   frame.Search:SetHeight(20)
@@ -78,6 +100,12 @@ local function CreateWindow()
   frame.Money:SetJustifyH("RIGHT")
 
   frame.Grid = CreateFrame("Frame", nil, frame)
+  frame.Grid:SetFrameLevel(frame:GetFrameLevel() + 5)
+
+  -- Carry the cell pool and dividers over from a previous frame.
+  for _, b in ipairs(cells) do b:SetParent(frame.Grid) end
+  for _, d in ipairs(dividers) do d:SetParent(frame.Grid) end
+  if old then old:Hide(); old:SetParent(nil) end
 
   -- Plain drag to move (outside Edit Mode); Edit Mode owns position when the lib is present.
   frame:RegisterForDrag("LeftButton")
@@ -113,8 +141,13 @@ local function NewCell(i)
   b:RegisterForDrag("LeftButton")
   b.bg = b:CreateTexture(nil, "BACKGROUND")           -- flat theme background
   b.bg:SetAllPoints()
-  b.border = b:CreateTexture(nil, "BORDER")           -- flat theme 1px border (drawn as bg behind inset)
-  b.border:SetPoint("TOPLEFT", -1, 1); b.border:SetPoint("BOTTOMRIGHT", 1, -1)
+  -- flat theme 1px ring: four edge textures so the interior stays see-through
+  b.edges = {}
+  for e = 1, 4 do b.edges[e] = b:CreateTexture(nil, "BORDER") end
+  b.edges[1]:SetPoint("TOPLEFT", -1, 1);     b.edges[1]:SetPoint("TOPRIGHT", 1, 1);      b.edges[1]:SetHeight(1)
+  b.edges[2]:SetPoint("BOTTOMLEFT", -1, -1); b.edges[2]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[2]:SetHeight(1)
+  b.edges[3]:SetPoint("TOPLEFT", -1, 1);     b.edges[3]:SetPoint("BOTTOMLEFT", -1, -1);  b.edges[3]:SetWidth(1)
+  b.edges[4]:SetPoint("TOPRIGHT", 1, 1);     b.edges[4]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[4]:SetWidth(1)
   b.normal = b:CreateTexture(nil, "BACKGROUND", nil, -1) -- classic Quickslot2 art
   b.normal:SetPoint("CENTER", 0, -1)
   b.icon = b:CreateTexture(nil, "ARTWORK")
@@ -153,7 +186,9 @@ local function DressCell(b, cell, theme)
     b.normal:Hide()
   end
   if theme.slotFlat then b.bg:SetColorTexture(unpack(theme.slotFlat)); b.bg:Show() else b.bg:Hide() end
-  if theme.slotBorder then b.border:SetColorTexture(unpack(theme.slotBorder)); b.border:Show() else b.border:Hide() end
+  for _, e in ipairs(b.edges) do
+    if theme.slotBorder then e:SetColorTexture(unpack(theme.slotBorder)); e:Show() else e:Hide() end
+  end
 
   b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.glyph:Hide(); b.dim:Hide()
   b:SetAlpha(1)
@@ -184,12 +219,40 @@ local function Changed()
   Window.Render()
 end
 
+-- Mock-only: an icon that rides the mouse while a fake item is "held", standing in for the client's
+-- real cursor item (which only C_Container.PickupContainerItem can produce). Removed in M4.
+local carry
+local function Carry_Update()
+  if not carry then return end
+  local x, y = GetCursorPosition()
+  local s = UIParent:GetEffectiveScale()
+  carry:ClearAllPoints()
+  carry:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / s + 14, y / s - 14)
+end
+local function Carry_Show(icon)
+  if not carry then
+    carry = CreateFrame("Frame", "KondoBagsMockCarry", UIParent)
+    carry:SetSize(30, 30)
+    carry:SetFrameStrata("TOOLTIP")
+    carry.icon = carry:CreateTexture(nil, "OVERLAY")
+    carry.icon:SetAllPoints()
+    carry.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    carry:SetScript("OnUpdate", Carry_Update)
+  end
+  carry.icon:SetTexture(icon)
+  carry:SetAlpha(0.85)
+  Carry_Update()
+  carry:Show()
+end
+local function Carry_Hide() if carry then carry:Hide() end end
+
 local function MockPickup(ref)
-  if ref and ref.item then state.cursor = { ref = ref }; SetCursor("ITEM_CURSOR") end
+  if ref and ref.item then state.cursor = { ref = ref }; Carry_Show(ref.item.icon) end
 end
 
 local function MockClearCursor()
   state.cursor = nil
+  Carry_Hide()
   ResetCursor()
 end
 
@@ -338,8 +401,8 @@ function Window.Render()
   if not frame or not state.store or not state.slots then return end
   local theme = Theme_()
   ApplyBackdrop(frame, theme)
-  frame.Portrait:SetShown(theme.portrait)
-  frame.Title:SetFontObject(theme.titleFont)
+  if frame.Portrait and not theme.frameTemplate then frame.Portrait:SetShown(theme.portrait) end
+  if frame.Title and not theme.frameTemplate then frame.Title:SetFontObject(theme.titleFont) end
 
   local input = Sections.Partition(state.store, state.slots, state.columns)
   local layout = Sections.Layout(input)
@@ -404,17 +467,24 @@ end
 -- public
 -- ---------------------------------------------------------------------------
 function Window.Setup(opts)
-  CreateWindow()
   state.store = opts.store
   state.slots = opts.slots
   state.money = opts.money or 0
   state.columns = opts.columns or state.columns
   state.themeID = opts.themeID or state.themeID
   state.onChanged = opts.onChanged
+  CreateWindow()
   Window.Render()
 end
 
-function Window.SetTheme(id) state.themeID = id; Window.Render() end
+function Window.SetTheme(id)
+  state.themeID = id
+  local wasShown = Window.IsShown()
+  CreateWindow()                      -- rebuilds only when the frame family changes
+  if ns.EditMode then ns.EditMode.ApplyToWindow() end
+  Window.Render()
+  if wasShown then frame:Show() end
+end
 function Window.SetColumns(n) state.columns = math.max(Sections.MinColumns(), math.min(24, n)); Window.Render() end
 function Window.GetColumns() return state.columns end
 function Window.Frame() return frame end

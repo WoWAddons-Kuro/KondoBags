@@ -35,7 +35,7 @@ read_globals = {
 
 files["KondoBags/"] = {
     globals = {
-        "KondoBagsDB", "KondoBagsCharDB",
+        "KondoBagsDB", "KondoBagsCharDB", "StaticPopupDialogs",
         "SLASH_KONDOBAGS1", "SLASH_KONDOBAGS2", "SlashCmdList",
     },
 }

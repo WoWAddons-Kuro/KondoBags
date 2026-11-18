@@ -19,8 +19,8 @@ ns.Theme.Register({
   portrait = false,
   titleFont = "GameFontNormal",
   slotNormal = nil,
-  slotFlat = { 0.12, 0.12, 0.12, 0.9 },
-  slotBorder = { 0.3, 0.3, 0.3, 1 },
+  slotFlat = { 0, 0, 0, 0.25 },          -- near-transparent interior; the border carries the cell
+  slotBorder = { 0.55, 0.55, 0.55, 0.9 }, -- 1px ring, brighter than the panel
   plusGlyph = { text = "+", font = "GameFontNormalLarge", color = { 0.8, 0.8, 0.8, 0.5 } },
   handleGlyph = { text = "\226\137\161", font = "GameFontNormalLarge", color = { 0.8, 0.8, 0.8, 0.5 } },
   divider = { height = 1, color = { 0.5, 0.5, 0.5, 0.5 }, insetX = 2 },
