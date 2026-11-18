@@ -86,7 +86,8 @@ KondoBags/                              git repo  (github WoWAddons-Kuro/KondoBa
   README.md  CHANGELOG.md  LICENSE(MIT)  .pkgmeta  .gitignore  .luacheckrc
   SPECS/
     00_KondoBags_Core.md                this file
-    01_...                              later specs (themes, bank) as they split out
+    01_Stock_Bag_Replacement.md         Phase L step 5: hooks, sink, parity, typed-slot polish
+    02_PROSPECTIVE_Filtered_Keep_Sections.md   NOT committed: "smart" groups considered on paper only
   docs/                                 design notes, mockup screenshots
   spec/                                 off-client tests:  lua5.1 spec/run.lua
     run.lua  fixtures/*.lua (dumped snapshots; M1)
