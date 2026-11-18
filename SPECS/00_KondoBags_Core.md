@@ -39,6 +39,7 @@ The design goal is the smallest possible configuration surface and the least ado
 | D8 | Libraries are **vendored** (unmodified, with `VENDORED.txt`), not git submodules | `publish.cmd` treats an empty submodule folder as missing and LibEditMode has no CurseForge zip to fall back on. |
 | D9 | **MVC split in code**: `Core/Sections.lua` (model), `Core/Layout.lua` (pure layout), `Core/BagState.lua` (controller: owns store + slots + held item, `Pickup/Drop` decide pin-vs-swap, emits `changed`/`cursor`), `UI/Window.lua` (view only: draws `BagState:Layout()`, forwards gestures). | Audit 2026-11-17 found the view mutating the model. Drop semantics are now unit-tested and survive the M4 switch to secure buttons untouched; the mock item source is swapped for the Client provider inside the controller. |
 | D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner, 2026-11-17, after seeing headers, `+` cell and handle cell in game: too gaudy. |
+| D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. Replaces Draft 3's logical per-itemID pins. |
 
 ## Architecture
 
@@ -247,15 +248,45 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 +------------------------------------------+   +------------------------------------------+
 ```
 
-| Gesture | Effect |
-|---|---|
-| Drop an item on a section's lock cell | Pin that item into the section (logical; needs no free slot; the item does not change physical slot) |
-| Drop a kept item on another item in the **same** section | Reorder: it takes that item's position (logical) |
-| **Shift** while carrying, over a section | A phantom insert cell opens under the mouse and the row re-flows live; drop lands exactly there (before the hovered item, or at the end when over the lock). Release Shift and the gap closes |
-| Drop a kept item on a **loose** cell (above the sections) | Unpin it ("stop keeping it") and do the stock swap / place |
-| Any other drop on an item cell / empty slot | Stock swap / place behaviour, untouched. Pins follow the item, not the slot |
-| Hover the lock cell | Tooltip: section name, item count, "drop an item here to keep it" |
-| *(later)* right-click the lock cell | Section options: rename, dissolve, unpin, new section |
+**Sections are PHYSICAL slot ranges (D11, 2026-11-18).** The bag's slots `0..N` (in Blizzard's combined order) are cut into contiguous ranges, one per section, bottom-up: incoming owns `0 .. boundary-1`, the first section owns `boundary .. boundary2-1`, and so on. Three facts drive everything:
+
+1. **Blizzard loots into the lowest free slot.** Incoming's slot order *is* Blizzard's loot order and is never reordered by us.
+2. **Every section slot is always occupied** (a section is exactly as big as its item count), so loot never lands in a section. That means a section's *physical* slot order is irrelevant; its **visual order** is our own `order` list.
+3. **Incoming is drawn with slot `0` bottom-right and higher slots walking left/up** (`N-1 … 1 0` in reading order), bottom-anchored with the partial row on top. New loot therefore appears at the top-left frontier in a *new* cell and **no existing incoming cell moves**. Cells being added or removed at the start of incoming (padding, reclaimed section slots) never shift the others.
+
+```
+ incoming (6 wide):   [5][4][3][2][1][0]        0 = anchor, bottom-right
+ keep:                [lock][6][7][8]           physical slots 6..8, visual order = order list
+```
+
+**Invariant on shrink.** When a section loses an item, the slot it gives back to incoming **must be its lowest-numbered slot** (`boundary`), because that is where Blizzard loots next and it must become the top of incoming's sequence. Since section slot order is free, this costs at most ONE extra physical swap, never a cascade.
+
+| Gesture | Physical moves (`PickupContainerItem` pairs in M4; table swaps in the mock) | Visual result |
+|---|---|---|
+| Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
+| Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
+| Drop loose `l` (slot `s_l`) on a section's **lock cell** | if `s_l == boundary-1`: none; else swap `s_l ↔ boundary-1`; `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. **Nuance (open):** if `boundary-1` was occupied by some other loose item, that item is now at `s_l`'s cell — one visual swap inside incoming. Accepted unless the owner objects |
+| Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
+| **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
+| Loose on loose / empty | stock swap/place | stock |
+| Hover the lock cell | — | tooltip: section name, count, "drop an item here to keep it" |
+| *(later)* right-click the lock cell | — | rename, dissolve, new section |
+
+```lua
+-- pseudocode: illustrative only
+KondoBagsCharDB.sections = {                 -- KondoBags_SectionStore; list order = display order, bottom-up in slots
+  nextID = 2,
+  list = {
+    { id = "s1", name = "Keep", boundary = 6, order = { 7, 8, 6 } },   -- owns slots 6..N; order = visual, by slot index
+  },
+}
+-- Membership is BY SLOT (slot >= boundary), not by itemID. `order` lists the section's slots in visual order.
+-- Moving an item physically into or out of the range is what pins/unpins it.
+```
+
+Consequences: (a) a drop **may need a free slot only when the gesture is itself a physical place into an empty slot**, exactly like stock; pinning never does, it swaps; (b) `BagState:Drop` returns the list of moves, which the mock applies to the slot table and M4 applies through the Client provider; (c) `Partition` is now trivial — slots below `boundary` descending are incoming, slots at/above are the section in `order`.
+
+**Superseded (Draft 3, 2026-11-17):** logical per-`itemID` pins that never moved items. Rejected because an unpinned item then sat wherever Blizzard had put it, so reclaiming its cell reshuffled incoming; and because the mock's "logical" behaviour would not have matched what M4's real moves produce.
 
 **Rejected along the way (2026-11-17, kept for the record):** labelled header rows with thin rules; a `+` cell that creates a section; a per-section handle cell (`≡`) for drag-reorder / right-click; divider lines between sections. All read as gaudy next to the stock bag.
 
