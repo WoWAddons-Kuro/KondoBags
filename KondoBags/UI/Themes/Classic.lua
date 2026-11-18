@@ -41,6 +41,10 @@ ns.Theme.Register({
   slotBorder = nil,
   -- Section drop cell: a faded lock icon over the empty-slot art. Drop an item on it to pin it there.
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 7 },
+  -- Slim lock: the half-width gutter lock drawn when a group's items fill whole rows (Layout.slimGutter).
+  slimLockScale = 0.5,
+  slimDropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.45, inset = 2 },
+  slimLockBg = { 0, 0, 0, 0.35 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.85, inset = 7 },  -- Shift-drag cursor gap
   -- Restricted-bag slots (KondoBags_SlotKind): faded glyph behind EMPTY cells and a subtle border tint
   -- on every cell of that kind (tint is toggled by KondoBagsDB.kindTint).

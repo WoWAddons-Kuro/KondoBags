@@ -1,4 +1,4 @@
--- KondoBags Core/Layout.lua -- pure Lua. Turns a partitioned bag (loose + sections) into grid cells.
+﻿-- KondoBags Core/Layout.lua -- pure Lua. Turns a partitioned bag (loose + sections) into grid cells.
 --
 -- No WoW API. Runs under stock Lua 5.1 (spec/run.lua) and in game alike. The VIEW (UI/Window.lua)
 -- consumes KondoBags_LayoutResult and nothing else from the model.
@@ -96,7 +96,13 @@ function Layout.Build(input)
     -- hideLocks (D14): an EXTERNAL cursor item with no free general slot has nowhere to land, so the
     -- lock (and gap) cells are not emitted at all; the group's items still draw.
     local cells = {}
-    if not input.hideLocks then cells[1] = { kind = Layout.CELL_DROP, sectionID = section.id } end
+    -- SLIM LOCK (owner, 2026-11-18): when a group's items fill whole rows exactly, the lock alone would
+    -- spill onto a row of its own. Instead the lock is emitted `slim` at col 0 -- a half-width cell in
+    -- a gutter LEFT of the grid, on the group's TOP row -- so the grid itself never changes. The view
+    -- widens the window by that gutter only while some row carries a slim lock (KondoBags_LayoutResult.slimGutter).
+    local lock
+    local lock
+    if not input.hideLocks then lock = { kind = Layout.CELL_DROP, sectionID = section.id }; cells[1] = lock end
     -- Shift-drag: the cursor gap. See KondoBags_CursorGap RENDER RULE above: the gap takes the
     -- anchor's column and the anchor slides left, which in reading order means the gap cell is
     -- emitted immediately AFTER the anchor (or right after the lock when anchorRef is nil).
@@ -111,7 +117,18 @@ function Layout.Build(input)
         cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = ref }
       end
     end
-    Append(LayoutRun(cells, columns, section.id))
+    local rest = #cells - (lock and 1 or 0)
+    if lock and rest > 0 and rest % columns == 0 then
+      table.remove(cells, 1)                               -- lay out items (+ gap) alone: they fill whole rows
+      local rows = LayoutRun(cells, columns, section.id)
+      lock.col, lock.slim = 0, true
+      table.insert(rows[1].cells, 1, lock)                 -- gutter cell on the group's top row
+      rows[1].slimLock = true
+      out.slimGutter = true
+      Append(rows)
+    else
+      Append(LayoutRun(cells, columns, section.id))
+    end
   end
 
   return out

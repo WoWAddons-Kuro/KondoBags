@@ -520,7 +520,15 @@ local function DressCell(b, cell, theme)
     local refuses = cell.slotKind ~= nil and not view.bag:HeldFits(cell.slotKind)
     SetNoDrop(b, refuses, item ~= nil, theme)
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
-    SetGlyph(b, theme.dropGlyph)
+    if cell.slim then
+      -- Slim lock (gutter cell, half width): the round Quickslot ring would be clipped, so swap it for
+      -- the flat slot colour and let the lock glyph fill the narrow cell.
+      if b.normal then b.normal:Hide() end
+      b.bg:SetColorTexture(unpack(theme.slimLockBg or theme.slotFlat or { 0, 0, 0, 0.35 })); b.bg:Show()
+      SetGlyph(b, theme.slimDropGlyph or theme.dropGlyph)
+    else
+      SetGlyph(b, theme.dropGlyph)
+    end
   elseif cell.kind == Layout.CELL_GAP then
     -- Shift-drag cursor gap: the cell under the mouse where the carried item will land; brighter lock glyph
     SetGlyph(b, theme.gapGlyph or theme.dropGlyph)
@@ -633,6 +641,12 @@ function Window.Render()
   end
   local w, h = Theme.WindowSize(theme, bag.columns, rows)
   h = h + extraH
+  -- Slim-lock gutter (Layout.slimGutter): a group whose items fill whole rows puts its lock half-width
+  -- in a gutter LEFT of the grid instead of on a row of its own. The window grows by the gutter; the
+  -- grid origin shifts right by it; the grid itself is unchanged.
+  local slimW = math.floor(theme.cell.size * (theme.slimLockScale or 0.5) + 0.5)
+  local gutter = layout.slimGutter and (slimW + (theme.cell.pitchX - theme.cell.size)) or 0
+  w = w + gutter
   frame:SetSize(w, h)
 
   local f = theme.frame
@@ -640,10 +654,10 @@ function Window.Render()
   local searchH = theme.searchHeight or 20
   local searchTop = f.padTop + (theme.searchTopGap or (theme.titleHeight - searchH) / 2)
   frame.Grid:ClearAllPoints()
-  frame.Grid:SetPoint("TOPLEFT", f.padLeft, -(f.padTop + theme.titleHeight))
-  frame.Grid:SetSize(w - f.padLeft - f.padRight, rows * theme.cell.pitchY + extraH)
+  frame.Grid:SetPoint("TOPLEFT", f.padLeft + gutter, -(f.padTop + theme.titleHeight))
+  frame.Grid:SetSize(w - f.padLeft - f.padRight - gutter, rows * theme.cell.pitchY + extraH)
 
-  local gridW = w - f.padLeft - f.padRight
+  local gridW = w - f.padLeft - f.padRight - gutter
   frame.Search:ClearAllPoints()
   frame.Search:SetHeight(searchH)
   frame.Search:SetWidth(gridW * (theme.searchWidthScale or 1) - 8)
@@ -696,7 +710,13 @@ function Window.Render()
       end
       DressCell(b, cell, theme)
       b:ClearAllPoints()
-      b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (cell.col - 1) * theme.cell.pitchX, cellY)
+      if cell.slim then
+        -- Slim lock: half-width cell in the gutter immediately left of the grid, top row of its group.
+        b:SetSize(slimW, theme.cell.size)
+        b:SetPoint("TOPRIGHT", frame.Grid, "TOPLEFT", -(theme.cell.pitchX - theme.cell.size), cellY)
+      else
+        b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (cell.col - 1) * theme.cell.pitchX, cellY)
+      end
       b:Show()
     end
   end

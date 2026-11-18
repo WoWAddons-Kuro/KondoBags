@@ -95,6 +95,22 @@ test("layout: empty group still shows its lock; the cursor gap opens in the ANCH
   eq(r.rows[1].cells[2].kind, L.CELL_GAP, "nil anchor = right after the lock")
 end)
 
+test("layout: slim lock -- a group whose items fill whole rows keeps its lock in the gutter (col 0), no extra row", function()
+  local slots = {}
+  for i = 1, 4 do slots[i] = { slotIndex = 10 + i, item = Item(i) } end
+  local r = L.Build({ columns = 4, loose = { { slotIndex = 0 } }, sections = { { id = "s1", slots = slots } } })
+  eq(#r.rows, 2, "incoming row + ONE group row (the lock did not spill)")
+  ok(r.slimGutter, "result asks the view for the gutter")
+  local row = r.rows[2]
+  ok(row.slimLock); eq(#row.cells, 5)
+  eq(row.cells[1].kind, L.CELL_DROP); eq(row.cells[1].col, 0); ok(row.cells[1].slim)
+  eq(row.cells[2].col, 1); eq(row.cells[5].col, 4, "items keep the full row")
+  -- 5 items in 4 columns: normal lock (partial top row), no gutter
+  slots[5] = { slotIndex = 15, item = Item(5) }
+  r = L.Build({ columns = 4, loose = {}, sections = { { id = "s1", slots = slots } } })
+  ok(not r.slimGutter); eq(#r.rows, 2); eq(r.rows[1].cells[1].kind, L.CELL_DROP); eq(r.rows[1].cells[1].col, 3)
+end)
+
 -- ---------------------------------------------------------------------------
 -- Sections (model, D15): positional map with nullable backing; ReorderHoles
 -- ---------------------------------------------------------------------------

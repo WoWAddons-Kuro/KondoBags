@@ -30,6 +30,8 @@ ns.Theme.Register({
   slotFlat = { 0, 0, 0, 0.25 },          -- near-transparent interior; the border carries the cell
   slotBorder = { 0.32, 0.32, 0.32, 0.9 }, -- 1px ring, a step above the panel; not bright
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
+  slimLockScale = 0.5,
+  slimDropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 2 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
   kindGlyph = {
     quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",       desaturate = true, alpha = 0.3, inset = 3 },
