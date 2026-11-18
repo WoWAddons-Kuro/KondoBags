@@ -386,7 +386,13 @@ local function DressCell(b, cell, theme)
     tint = nil                                                                   -- no square edges on classic
   end
   local function ApplyNormalTint()
-    if normalTint and b.normal then b.normal:SetVertexColor(unpack(normalTint)) end
+    if not normalTint then return end
+    -- Secure cells: the ItemButton intrinsic can swap its NormalTexture object after creation, so the
+    -- cached b.normal goes stale (only the first-created cell kept its tint). Re-fetch every time and
+    -- also go through the stock helper, which knows the current one.
+    if b.secure and b.GetNormalTexture then b.normal = b:GetNormalTexture() end
+    if b.secure and SetItemButtonNormalTextureVertexColor then SetItemButtonNormalTextureVertexColor(b, unpack(normalTint)) end
+    if b.normal then b.normal:SetVertexColor(unpack(normalTint)) end
   end
   for _, e in ipairs(b.edges) do
     if tint then e:SetColorTexture(unpack(tint)); e:Show()
