@@ -66,32 +66,24 @@ local function CreateWindow(theme)
   if theme.frameTemplate then
     -- Blizzard portrait frame: it already has NineSlice, Bg, TitleContainer.TitleText, PortraitContainer.portrait,
     -- CloseButton. Use its own pieces so the look is exactly the client's.
-    if theme.portraitScale and theme.portraitScale < 1 and NineSliceUtil and NineSliceLayouts then
-      -- The template's TopLeftCorner atlas carries the ring for a 62px portrait and cannot be scaled on
-      -- its own. Use the no-portrait border layout and draw a smaller portrait + ring ourselves.
-      local layout = NineSliceLayouts.ButtonFrameTemplateNoPortrait or NineSliceLayouts.PortraitFrameTemplateNoPortrait
-      if layout and frame.NineSlice then NineSliceUtil.ApplyLayout(frame.NineSlice, layout) end
-      if frame.PortraitContainer then frame.PortraitContainer:Hide() end
-      local size = 62 * theme.portraitScale
-      local holder = CreateFrame("Frame", nil, frame)
-      holder:SetFrameLevel(frame:GetFrameLevel() + 20)
-      holder:SetSize(size, size)
-      holder:SetPoint("TOPLEFT", frame, "TOPLEFT", -6, 6)
-      frame.Portrait = holder:CreateTexture(nil, "ARTWORK")
-      frame.Portrait:SetAllPoints()
-      frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
-      frame.Portrait:SetTexCoord(0.1, 0.9, 0.1, 0.9)
-      if frame.Portrait.SetMask then frame.Portrait:SetMask("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask") end
-      local ring = holder:CreateTexture(nil, "OVERLAY")
-      ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")   -- round gold ring, stock art
-      ring:SetTexCoord(0, 0.6, 0, 0.6)
-      ring:SetPoint("CENTER", holder, "CENTER", 10 * theme.portraitScale, -10 * theme.portraitScale)
-      ring:SetSize(size * 1.55, size * 1.55)
-      frame.PortraitRing = ring
-    else
-      frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
-      if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
-      elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
+    frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
+    if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
+    elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
+    -- The gold ring is part of the nine-slice TopLeftCorner atlas, so only the portrait itself can be
+    -- resized. Shrink it inside the ring (which stays stock size) and keep the circle mask on it.
+    if frame.Portrait and theme.portraitScale and theme.portraitScale < 1 then
+      local base, s = 62, theme.portraitScale
+      local size = base * s
+      local shift = (base - size) / 2          -- keep the same centre as the stock portrait
+      frame.Portrait:SetSize(size, size)
+      frame.Portrait:ClearAllPoints()
+      frame.Portrait:SetPoint("TOPLEFT", frame.PortraitContainer, "TOPLEFT", -5 + shift, 7 - shift)
+      local mask = frame.PortraitContainer.CircleMask
+      if mask then
+        mask:ClearAllPoints()
+        mask:SetPoint("TOPLEFT", frame.Portrait, "TOPLEFT", 2 * s, 0)
+        mask:SetPoint("BOTTOMRIGHT", frame.Portrait, "BOTTOMRIGHT", -2 * s, 4 * s)
+      end
     end
     if frame.Bg and theme.bgTint then frame.Bg:SetVertexColor(unpack(theme.bgTint)) end
     frame.Title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
