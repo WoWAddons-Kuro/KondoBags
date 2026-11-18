@@ -272,7 +272,8 @@ local function DecorateSecure(b)
   b.edges[2]:SetPoint("BOTTOMLEFT", -1, -1); b.edges[2]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[2]:SetHeight(1)
   b.edges[3]:SetPoint("TOPLEFT", -1, 1);     b.edges[3]:SetPoint("BOTTOMLEFT", -1, -1);  b.edges[3]:SetWidth(1)
   b.edges[4]:SetPoint("TOPRIGHT", 1, 1);     b.edges[4]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[4]:SetWidth(1)
-  b.emptyIcon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+  -- ARTWORK sits above the template's NormalTexture (Quickslot2 art) and below Count/IconBorder.
+  b.emptyIcon = b:CreateTexture(nil, "ARTWORK", nil, -1)
   b.emptyIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93); b.emptyIcon:Hide()
   b.dim = b.searchOverlay                              -- stock black overlay = our search dim
   b.normal = b:GetNormalTexture()                      -- stock Quickslot2 = our slotNormal target
@@ -390,6 +391,8 @@ local function DressCell(b, cell, theme)
     SetItemButtonCount(b, item and item.count or 0)
     SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
     SetItemButtonDesaturated(b, item and item.locked or false)
+    -- Empty slot: the template leaves its icon region shown with no file; hide it so the glyph reads.
+    if b.icon then b.icon:SetShown(item ~= nil) end
     if not item then
       local g = cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind]
       if g and KondoBagsDB and KondoBagsDB.ammoGlyph == "ammo" then g = theme.kindGlyph[cell.slotKind .. "Ammo"] or g end
@@ -427,6 +430,16 @@ end
 Cell_OnClick = function(b, button)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
+  if bag.live then
+    -- D14: only lock / gap cells are ours on the live bag. Left with an item on the cursor = pin or
+    -- reorder; right-click on a lock with an empty cursor = the group menu. Everything else is stock.
+    if button == "RightButton" then
+      if cell.kind == Layout.CELL_DROP and not CursorHasItem() then Window.ShowGroupMenu(b, cell.sectionID) end
+      return
+    end
+    if CursorHasItem() and bag.held then bag:Drop(cell) end
+    return
+  end
   if button == "RightButton" then
     -- Right-click while carrying always cancels the carry (stock behaviour), nothing else.
     if bag:HeldItem() then bag:ClearCursor(); return end
@@ -480,11 +493,13 @@ function Window.ShowGroupMenu(anchor, sectionID)
 end
 
 Cell_OnReceiveDrag = function(b)
-  if b.cell and view.bag then view.bag:Drop(b.cell) end
+  if not b.cell or not view.bag then return end
+  if view.bag.live then if CursorHasItem() and view.bag.held then view.bag:Drop(b.cell) end else view.bag:Drop(b.cell) end
 end
 
 Cell_OnDragStart = function(b)
   local cell, bag = b.cell, view.bag
+  if bag and bag.live then return end                      -- live slots are secure buttons; locks don't drag
   if cell and bag and cell.kind == Layout.CELL_SLOT and cell.ref and not bag:HeldItem() then bag:Pickup(cell.ref) end
 end
 

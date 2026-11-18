@@ -93,12 +93,15 @@ function Layout.Build(input)
   Append(LayoutRun(incoming, columns, nil))
 
   for _, section in ipairs(input.sections or {}) do
-    local cells = { { kind = Layout.CELL_DROP, sectionID = section.id } }
+    -- hideLocks (D14): an EXTERNAL cursor item with no free general slot has nowhere to land, so the
+    -- lock (and gap) cells are not emitted at all; the group's items still draw.
+    local cells = {}
+    if not input.hideLocks then cells[1] = { kind = Layout.CELL_DROP, sectionID = section.id } end
     -- Shift-drag: the cursor gap. See KondoBags_CursorGap RENDER RULE above: the gap takes the
     -- anchor's column and the anchor slides left, which in reading order means the gap cell is
     -- emitted immediately AFTER the anchor (or right after the lock when anchorRef is nil).
     local gap = input.cursorGap
-    local gapHere = gap and gap.sectionID == section.id
+    local gapHere = gap and gap.sectionID == section.id and not input.hideLocks
     if gapHere and gap.anchorRef == nil then
       cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = nil }
     end

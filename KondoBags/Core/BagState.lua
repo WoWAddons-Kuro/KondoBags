@@ -59,10 +59,26 @@ function BagState:Emit(event) for _, fn in ipairs(self.listeners) do fn(event, s
 -- ---------------------------------------------------------------------------
 -- Apply { KondoBags_SlotMove... } to the slot table: each is a swap of the two slots' contents.
 function BagState:ApplyMoves(moves)
+  -- LIVE: hand the list to self.moveQueue (Core/MoveQueue), which issues PickupContainerItem pairs
+  -- one at a time; the real bag changes arrive via BAG_UPDATE_DELAYED -> SetSlots. We do NOT touch
+  -- the ref table ourselves (the scan is the truth). MOCK: swap the table fields now.
+  if self.live then
+    if self.moveQueue and #moves > 0 then self.moveQueue:Push(moves) end
+    return
+  end
   for _, m in ipairs(moves) do
     local a, b = self.slots[m.from + 1], self.slots[m.to + 1]
     a.item, b.item = b.item, a.item
   end
+end
+
+-- LIVE: the real cursor. The view calls this on CURSOR_CHANGED with the ref the cursor item came
+-- from (nil = empty cursor), or the string "external" for an item from outside the bag (bank, mail).
+function BagState:SetCursor(refOrExternal)
+  if self.held == refOrExternal then return end
+  self.held = refOrExternal
+  if not self.held then self.cursorGap = nil end
+  self:Emit("cursor")
 end
 
 -- ---------------------------------------------------------------------------
@@ -114,6 +130,12 @@ end
 function BagState:Layout(columns)
   local input = Sections.Partition(self.store, self.slots, columns or self.columns, self.typedSlots)
   input.cursorGap = self:CursorGap()
+  -- D14: an external cursor item with no free general slot cannot be pinned; hide the targets.
+  if self.held == "external" then
+    local free = false
+    for i = 1, self.store.boundary do if self.slots[i].item == nil then free = true; break end end
+    input.hideLocks = not free
+  end
   return Layout.Build(input)
 end
 
@@ -185,6 +207,35 @@ end
 function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
+  -- LIVE (D14): only lock / gap cells reach us; slot cells are Blizzard's. An "external" cursor item
+  -- (bank, mail) pins through PinFromIncoming(nil) when a general slot is free; the view hides the
+  -- lock cells when none is, so a nil result here means "nothing to do".
+  if self.live then
+    local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
+    if not targetGroup or (cell.kind ~= Layout.CELL_DROP and cell.kind ~= Layout.CELL_GAP) then return false end
+    local anchorRef = cell.kind == Layout.CELL_GAP and cell.anchorRef or nil
+    local anchorSlot = anchorRef and anchorRef.slotIndex or nil
+    local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
+    if held == "external" then
+      local moves, e = Sections.PinFromIncoming(self.store, targetGroup, nil, anchorSlot, isFree)
+      if not moves then return false end
+      -- Place the cursor item into slot e first (one Pickup), then the chain-shift.
+      local r = self.slots[e + 1]
+      self.moveQueue:Push({ { place = true, bagID = r.bagID, slot = r.slot } })
+      self:ApplyMoves(moves)
+      self.cursorGap = nil; self:Emit("changed"); return true
+    end
+    if held.kind and held.kind ~= "general" then return false end          -- typed items never pin
+    if Sections.IsKept(self.store, held.slotIndex) then
+      Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)   -- visual reorder; cursor keeps the item
+      self.cursorGap = nil; self:Emit("changed"); return true
+    end
+    -- Loose item on the cursor -> pin. The cursor has to be EMPTY before the queue swaps slots, so
+    -- put the item back where it came from first (Pickup on its own slot drops it back).
+    self.moveQueue:Push({ { place = true, bagID = held.bagID, slot = held.slot } })
+    PinHeldAtGap(self, held, targetGroup, anchorRef)
+    self.cursorGap = nil; self:Emit("changed"); return true
+  end
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
   local function refuse() self.held = nil; CloseCursorGap(self); self:Emit("cursor"); return false end
   -- Typed (restricted-bag) slots: no pin and no cross-kind move. Within the typed run a stock

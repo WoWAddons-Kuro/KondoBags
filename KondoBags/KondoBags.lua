@@ -72,8 +72,45 @@ local function EnsureLive()
   })
   KondoBagsCharDB.sections = liveBag.store        -- Reconcile may have replaced it
   liveBag:AddListener(function(event, b) if event == "changed" then KondoBagsCharDB.window.columns = b.columns end end)
-  liveBag.live = true                              -- secure cells; Blizzard owns slot gestures (D14). Pins: step 4
+  liveBag.live = true                              -- secure cells; Blizzard owns slot gestures (D14)
+  -- Physical moves (pin / unpin / dissolve) go through the MoveQueue one swap at a time. The flat
+  -- index resolves to a bag/slot through the CURRENT ref list.
+  liveBag.moveQueue = ns.MoveQueue.New(ns.Client.Active(), function(slotIndex)
+    local ref = liveBag.slots[slotIndex + 1]
+    return ref.bagID, ref.slot
+  end)
   return liveBag
+end
+
+-- LIVE cursor -> BagState.held (D14). GetCursorInfo() tells us an item is held but not where it came
+-- from; ITEM_LOCK_CHANGED(bag, slot) does: the slot that just LOCKED while the cursor filled is the
+-- source. A locked slot we know is one of ours -> that ref; an item on the cursor with no locked slot
+-- of ours -> "external" (bank, mail, trade, guild bank).
+local lastLocked   -- { bagID, slot } of the most recent lock event
+local function RefForBagSlot(bagID, slot)
+  if not liveBag then return nil end
+  for _, r in ipairs(liveBag.slots) do if r.bagID == bagID and r.slot == slot then return r end end
+  for _, r in ipairs(liveBag.typedSlots) do if r.bagID == bagID and r.slot == slot then return r end end
+  return nil
+end
+local function SyncCursor()
+  if not liveBag then return end
+  local kind = GetCursorInfo()
+  if kind ~= "item" then liveBag:SetCursor(nil); return end
+  local ref = lastLocked and RefForBagSlot(lastLocked.bagID, lastLocked.slot)
+  if ref and ref.item and ref.item.locked then liveBag:SetCursor(ref) else liveBag:SetCursor("external") end
+end
+local function OnItemLockChanged(bagID, slot)
+  if not liveBag or not slot then return end
+  local ref = RefForBagSlot(bagID, slot)
+  if ref and ref.item then
+    local info = ns.Client.Active().SlotInfo(bagID, slot)
+    ref.item.locked = info and info.locked or false
+    if ref.item.locked then lastLocked = { bagID = bagID, slot = slot } end
+  end
+  liveBag.moveQueue:OnLockChanged(ref and ref.item and ref.item.locked)
+  SyncCursor()
+  if source == "live" then ns.Window.Render() end
 end
 
 -- The bag the UI (Edit Mode, Options) should act on: whichever is attached, else live.
@@ -101,9 +138,14 @@ end
 local dirty = false
 local function OnBagsChanged()
   if not dirty or not liveBag then return end
+  -- While our own MoveQueue is mid-chain the bag is half-moved; a Reconcile now would "repair" the
+  -- store against it. Let the queue advance and rescan when it is idle (it calls back via onDone).
+  if liveBag.moveQueue:IsBusy() then liveBag.moveQueue:OnBagUpdateDelayed(); return end
   dirty = false
   liveBag:SetSlots(LiveScan())
   KondoBagsCharDB.sections = liveBag.store
+  lastLocked = nil
+  SyncCursor()
   if source == "live" then ns.Window.SetMoney(GetMoney and GetMoney() or 0) end
 end
 
@@ -166,7 +208,7 @@ end
 local f = CreateFrame("Frame")
 f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
-f:SetScript("OnEvent", function(_, event, arg1)
+f:SetScript("OnEvent", function(_, event, arg1, arg2)
   if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
     InitDB()
     SLASH_KONDOBAGS1 = "/kondo"
@@ -179,11 +221,17 @@ f:SetScript("OnEvent", function(_, event, arg1)
     f:RegisterEvent("BAG_UPDATE")
     f:RegisterEvent("BAG_UPDATE_DELAYED")
     f:RegisterEvent("PLAYER_MONEY")
+    f:RegisterEvent("ITEM_LOCK_CHANGED")
+    f:RegisterEvent("CURSOR_CHANGED")
     Print("loaded (%s). /kondo to open your bags, /kondo mock for the mockup, /kondo status", ns.Client.Active().name)
   elseif event == "BAG_UPDATE" then
     dirty = true
   elseif event == "BAG_UPDATE_DELAYED" then
     OnBagsChanged()
+  elseif event == "ITEM_LOCK_CHANGED" then
+    OnItemLockChanged(arg1, arg2)
+  elseif event == "CURSOR_CHANGED" then
+    SyncCursor()
   elseif event == "PLAYER_MONEY" then
     if source == "live" then ns.Window.SetMoney(GetMoney and GetMoney() or 0) end
   end

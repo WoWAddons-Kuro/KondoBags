@@ -7,7 +7,7 @@ local function LoadCore(file)
   chunk("KondoBags", ns)
 end
 LoadCore("Sections.lua"); LoadCore("Layout.lua"); LoadCore("BagState.lua")
-LoadCore("Scan.lua"); LoadCore("../Client/Client.lua"); LoadCore("../Client/Mock.lua")
+LoadCore("Scan.lua"); LoadCore("MoveQueue.lua"); LoadCore("../Client/Client.lua"); LoadCore("../Client/Mock.lua")
 local S, L, B = ns.Sections, ns.Layout, ns.BagState
 
 local tests, failures = {}, 0
@@ -353,6 +353,60 @@ test("Scan.Refs over the Mock provider: general first (flat index = bag order), 
   eq(#bag.slots, 3); eq(#bag.typedSlots, 2)
   -- Mock Pickup emulates the cursor: pick up then place
   P.Pickup(0, 1); ok(refs[1].item == nil); P.Pickup(0, 2); eq(refs[2].item.itemID, 1)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Phase L step 4: MoveQueue, live Drop through the queue, hideLocks (D14)
+-- ---------------------------------------------------------------------------
+test("MoveQueue: one swap in flight at a time; next starts after completion; onDone fires once", function()
+  local calls = {}
+  local P = { Pickup = function(b, s) calls[#calls + 1] = b .. ":" .. s end }
+  local q = ns.MoveQueue.New(P, function(i) return 0, i + 1 end)
+  local doneCount = 0
+  q:Push({ { from = 2, to = 3 }, { from = 3, to = 4 } }, function() doneCount = doneCount + 1 end)
+  eq(#calls, 2, "first swap issued as two Pickups"); eq(calls[1], "0:3"); eq(calls[2], "0:4")
+  ok(q:IsBusy())
+  q:OnLockChanged(false)                       -- one unlock: not done yet
+  eq(#calls, 2)
+  q:OnLockChanged(false)                       -- second unlock: swap landed, next goes
+  eq(#calls, 4); eq(calls[3], "0:4"); eq(calls[4], "0:5")
+  q:OnBagUpdateDelayed()                       -- alternative completion signal
+  ok(not q:IsBusy()); eq(doneCount, 1)
+  -- place op: a single Pickup
+  q:Push({ { place = true, bagID = 1, slot = 7 } })
+  eq(calls[5], "1:7"); eq(#calls, 5)
+  q:Abort(); ok(not q:IsBusy())
+end)
+
+test("live Drop on a lock: loose cursor item -> place back + chain-shift through the queue; store updated", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  bag.live = true
+  local issued = {}
+  bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = s end },
+    function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
+  bag:SetCursor(bag.slots[3])                   -- item 2 (slot index 2) on the real cursor
+  ok(bag:Drop(LockCell(bag)))
+  eq(bag.store.boundary, 5, "store already reflects the pin")
+  eq(bag.store.list[1].order[1], 5)
+  eq(issued[1], 3, "first op puts the cursor item back into its own slot (slot index 2 = slot 3)")
+  eq(#issued, 1, "the queue waits for that place to land before the chain-shift starts")
+  bag.moveQueue:OnBagUpdateDelayed()            -- place landed
+  eq(#issued, 3, "first swap of the chain (two Pickups) now in flight")
+  eq(issued[2], 3); eq(issued[3], 4)            -- swap slot index 2 <-> 3 (slots 3 <-> 4): e = 2 since no free slot
+end)
+
+test("hideLocks: external cursor with no free general slot emits no lock / gap cells", function()
+  local bag = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 1, 2, 3, 4, 5 }), columns = 6 })
+  bag.live = true
+  bag:SetCursor("external")
+  ok(LockCell(bag) == nil, "full bag: lock hidden")
+  local rows = bag:Layout().rows
+  eq(#rows[#rows].cells, 1, "the kept item still draws")
+  bag:SetCursor(nil)
+  ok(LockCell(bag) ~= nil, "cursor empty: lock back")
+  local bag2 = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 1, 3, 4, 5 }), columns = 6 })
+  bag2.live = true; bag2:SetCursor("external")
+  ok(LockCell(bag2) ~= nil, "one free slot: lock shown")
 end)
 
 -- ---------------------------------------------------------------------------
