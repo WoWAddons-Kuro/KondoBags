@@ -26,11 +26,10 @@ local function Bag(n, filledSlots)
   for i = 0, n - 1 do slots[#slots + 1] = { bagID = 0, slot = i + 1, item = set[i] and Item(100 + i) or nil } end
   return slots
 end
--- Store with one Keep section owning the top `k` slots of an n-slot bag (visual order = ascending).
-local function KeepStore(n, k)
-  local st = S.NewStore(n)
-  st.boundary = n - k                       -- D12: one keep-wide boundary
-  for s = n - k, n - 1 do st.list[1].order[#st.list[1].order + 1] = s end
+-- Store with one Keep group holding the given physical slots (visual order = given order).
+local function KeepStore(slotsKept)
+  local st = S.NewStore()
+  for _, s in ipairs(slotsKept or {}) do st.kept[s] = st.list[1].id; st.list[1].order[#st.list[1].order + 1] = s end
   return st
 end
 -- Readable pictures of the layout: incoming itemIDs in reading order / keep itemIDs in reading order.
@@ -43,6 +42,16 @@ local function Picture(bag)
     end
   end end
   return table.concat(inc, " ") .. " | " .. table.concat(keep, " ")
+end
+-- Physical slot indices of incoming in visual reading order (free cells show as "_N").
+local function IncomingSlots(bag)
+  local t = {}
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
+    if c.kind == L.CELL_SLOT and not r.typed and not c.sectionID then
+      t[#t + 1] = (c.ref.item and "" or "_") .. c.ref.slotIndex
+    end
+  end end
+  return table.concat(t, " ")
 end
 local function Cell(bag, slotIndex)
   for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
@@ -77,7 +86,6 @@ test("layout: empty group still shows its lock; the cursor gap opens in the ANCH
   local r = L.Build({ columns = 4, loose = {}, sections = { { id = "s1", slots = {} } } })
   eq(#r.rows[1].cells, 1); eq(r.rows[1].cells[1].kind, L.CELL_DROP)
   local a, b = { slotIndex = 8, item = Item(1) }, { slotIndex = 9, item = Item(2) }
-  -- no gap: lock@4 a@5 b@6.  Gap anchored to `a` (mouse was over a at col 5): lock@3 a@4 GAP@5 b@6
   local secs = { { id = "s1", slots = { a, b } } }
   r = L.Build({ columns = 6, loose = {}, sections = secs, cursorGap = { sectionID = "s1", anchorRef = a } })
   local kinds = {}
@@ -88,27 +96,40 @@ test("layout: empty group still shows its lock; the cursor gap opens in the ANCH
 end)
 
 -- ---------------------------------------------------------------------------
--- Sections (model, D11)
+-- Sections (model, D15): virtual positions, kept set, sorted free pool
 -- ---------------------------------------------------------------------------
-test("partition: incoming is highest slot first (slot 0 bottom-right); keep follows order", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
-  eq(Picture(bag), "5 4 3 2 1 0 | 6 7 8")
+test("partition: free pool first ascending physical (lowest free = top-left), then occupied descending; keep follows order", function()
+  -- physical 0..8: items in 0,1,3,5 ; kept 6,8 ; free 2,4,7
+  local bag = B.New({ store = KeepStore({ 6, 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
+  eq(IncomingSlots(bag), "_2 _4 _7 5 3 1 0")
+  eq(Picture(bag), "_ _ _ 5 3 1 0 | 6 8")
   S.MoveToPositionOf(bag.store, 8, 6)
-  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7", "visual reorder, no physical move")
+  eq(Picture(bag), "_ _ _ 5 3 1 0 | 8 6", "visual reorder, no physical move")
 end)
 
-test("reconcile: legacy stores become an empty Keep at the top; unclaimed keep slots join group 1", function()
-  local legacy = { nextID = 2, list = { { id = "s1", name = "Keep", items = { [6948] = true } } } }
-  local st = S.Reconcile(legacy, 10)
-  eq(st.boundary, 10); eq(#st.list[1].order, 0)
-  local perSection = { nextID = 2, list = { { id = "s1", boundary = 7, order = { 7 } } } }   -- D11-era shape
-  eq(S.Reconcile(perSection, 10).boundary, 10, "no store-level boundary -> fresh")
-  local st2 = S.Reconcile({ nextID = 2, boundary = 7, list = { { id = "s1", order = { 7 } } } }, 10)
-  eq(#st2.list[1].order, 3, "slots 8,9 unclaimed -> appended to group 1")
+test("free pool re-sorts when an item in the MIDDLE of incoming is used up; occupied cells never move", function()
+  local bag = B.New({ store = KeepStore({ 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
+  eq(IncomingSlots(bag), "_2 _4 _7 6 5 3 1 0")
+  bag.slots[4].item = nil                                   -- eat the item in physical 3
+  eq(IncomingSlots(bag), "_2 _3 _4 _7 6 5 1 0", "3 joined the pool between 2 and 4; 6 5 1 0 did not move")
+  bag.slots[9].item = nil                                   -- the KEPT item in 8 is eaten
+  bag:SetSlots(bag.slots)                                   -- scan -> Reconcile
+  ok(not S.IsKept(bag.store, 8), "an emptied kept slot leaves Keep (D13.1)")
+  eq(IncomingSlots(bag), "_2 _3 _4 _7 _8 6 5 1 0", "8 joined the pool at its sorted place")
+end)
+
+test("reconcile: pre-D15 stores (boundary / per-item sets) are replaced; emptied and unknown kept slots dropped; orders repaired", function()
+  eq(S.Reconcile({ nextID = 2, boundary = 7, list = { { id = "s1", order = { 7 } } } }, 10).kept[7], nil, "boundary store -> fresh")
+  eq(S.Reconcile({ nextID = 2, list = { { id = "s1", items = { [6948] = true } } } }, 10).nextID, 2, "per-item store -> fresh")
+  local st = { nextID = 3, kept = { [7] = "s1", [8] = "s1", [9] = "zz", [12] = "s1" }, list = { { id = "s1", name = "Keep", order = { 8 } } } }
+  local slots = Bag(10, { 7, 9 })                           -- 8 is EMPTY, 12 out of range, 9's group does not exist
+  S.Reconcile(st, 10, slots)
+  ok(st.kept[7] and not st.kept[8] and not st.kept[9] and not st.kept[12])
+  eq(table.concat(st.list[1].order, ","), "7", "order holds exactly the kept slots")
 end)
 
 test("AddGroup: the new empty group is drawn FIRST, directly under incoming; Keep moves down", function()
-  local bag = B.New({ store = KeepStore(9, 2), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local bag = B.New({ store = KeepStore({ 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
   local g = bag:AddGroup("")
   eq(bag.store.list[1], g); eq(bag.store.list[2].name, "Keep")
   local rows = bag:Layout().rows
@@ -116,147 +137,83 @@ test("AddGroup: the new empty group is drawn FIRST, directly under incoming; Kee
   eq(rows[#rows].sectionID, bag.store.list[2].id)
 end)
 
-test("RemoveGroup: items drop into incoming via the lowest keep slot; loot order preserved; last group cannot go", function()
-  -- keep = slots 6,7,8 in ONE group; add a second group and move item 8 into it, then remove that group
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
-  local g2 = bag:AddGroup("Second")                       -- drawn first
-  S.MoveToGap(bag.store, g2, 8, nil)                      -- item 8 now shows in g2 (gap after its lock)
-  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")                 -- groups print in order: g2 (8) then Keep (6 7)
+test("RemoveGroup: its slots become incoming with ZERO moves; last group cannot go", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local g2 = bag:AddGroup("Second")
+  S.MoveToGap(bag.store, g2, 8, nil)
+  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")
   ok(bag:RemoveGroup(g2.id))
-  -- slot 8 swapped down into slot 6 (the lowest keep slot), slot 6 released to incoming
-  eq(bag.store.boundary, 7)
-  eq(bag.slots[7].item.itemID, 108, "item 8 now physically in slot 6 = top of incoming")
-  eq(bag.slots[9].item.itemID, 106, "item 6 moved up to slot 8, still kept")
-  eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7")
+  eq(bag.slots[9].item.itemID, 108, "nothing moved")
+  eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7", "8 is incoming again, drawn in physical order")
   eq(#bag.store.list, 1)
   ok(not bag:RemoveGroup(bag.store.list[1].id), "cannot remove the last group")
-  -- removing an EMPTY group is a no-op physically
-  local g3 = bag:AddGroup("")
-  ok(bag:RemoveGroup(g3.id)); eq(bag.store.boundary, 7); eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7")
 end)
 
 -- ---------------------------------------------------------------------------
--- BagState (controller) -- the owner's worked examples
+-- BagState (controller), MOCK path -- the table is the bag
 -- ---------------------------------------------------------------------------
-test("drop kept (slot 7) onto EMPTY incoming slot 2: 7->2, lowest keep slot 6 slides into the hole and is released", function()
-  -- Pictures show ITEM ids (item n started in slot n). Owner's example in SLOT terms:
-  --   before 5 4 3 _ 1 0 | 6 7 8   drag slot7 -> slot2   after  6 5 4 3 2 1 0 | 7 8  (slot 6 now incoming)
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  eq(Picture(bag), "5 4 3 _ 1 0 | 6 7 8")
-  ok(bag:Pickup(bag.slots[8]))                  -- slot 7
-  ok(bag:Drop(Cell(bag, 2)))
-  eq(Picture(bag), "_ 5 4 3 7 1 0 | 6 8", "slot 6 released EMPTY at top-left; item 6 slid up into slot 7; nothing else moved")
-  eq(bag.store.boundary, 7)
-  eq(bag.slots[3].item.itemID, 107, "item 7 physically in slot 2")
-  eq(bag.slots[8].item.itemID, 106, "item 6 physically in slot 7"); ok(bag.slots[7].item == nil, "slot 6 empty")
-end)
-
-test("drop kept onto OCCUPIED incoming: plain swap, the displaced item is now kept in that visual spot", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[8]))                  -- item 7 at slot 7
-  ok(bag:Drop(Cell(bag, 2)))
-  eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
-  eq(bag.store.boundary, 6, "boundary unchanged")
-end)
-
-test("pin loose onto lock: items above it SHIFT down (no swap), keep grows; new item sits right of the lock", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[3]))                  -- item 2 at slot 2
+test("pin loose onto lock: ZERO moves; the slot is marked kept; its cell leaves incoming, occupied cells close ranks", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))                  -- item 2 at physical 2
   ok(bag:Drop(LockCell(bag)))
-  -- Shift: 3->2, 4->3, 5->4, item 2 -> slot 5; boundary 6->5. Incoming (slots 4..0) keeps its order
-  -- with the gap at slot 2 closed: 5 4 3 1 0. Keep = new first.
   eq(Picture(bag), "5 4 3 1 0 | 2 6 7 8")
-  eq(bag.store.boundary, 5)
-  eq(bag.slots[3].item.itemID, 103, "item 3 shifted down into slot 2")
-  eq(bag.slots[6].item.itemID, 102, "item 2 now at slot 5 (the new lowest keep slot)")
+  eq(bag.slots[3].item.itemID, 102, "item 2 is still physically in slot 2")
+  ok(S.IsKept(bag.store, 2))
 end)
 
-test("pin the item already at boundary-1: zero moves", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[6]))                  -- item 5 at slot 5
-  ok(bag:Drop(LockCell(bag)))
-  eq(Picture(bag), "4 3 2 1 0 | 5 6 7 8")
+test("pin with free slots around: the free pool is unchanged; only the pinned cell leaves incoming", function()
+  local bag = B.New({ store = KeepStore({ 8 }), slots = Bag(9, { 0, 1, 3, 5, 8 }), columns = 7 })
+  eq(IncomingSlots(bag), "_2 _4 _6 _7 5 3 1 0")
+  ok(bag:Pickup(bag.slots[4])); ok(bag:Drop(LockCell(bag)))   -- pin physical 3
+  eq(IncomingSlots(bag), "_2 _4 _6 _7 5 1 0")
+  eq(Picture(bag), "_ _ _ _ 5 1 0 | 3 8")
 end)
 
-test("pin: the hole is the HIGHEST free slot below the top; only items above it shift (minimal movement)", function()
-  -- slots 0..5 incoming, 2 and 4 free; pin item 0. Hole e = 4 (nearest to the blocking item 5):
-  -- 0 -> 4, then 4<->5. Items 1 and 3 do not move; slot 2 stays free; slot 0 becomes the hole.
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 5, 6, 7, 8 }), columns = 7 })
-  eq(Picture(bag), "5 _ 3 _ 1 0 | 6 7 8")
-  ok(bag:Pickup(bag.slots[1]))                  -- item 0
-  ok(bag:Drop(LockCell(bag)))
-  eq(Picture(bag), "5 3 _ 1 _ | 0 6 7 8")
-  eq(bag.store.boundary, 5)
-  eq(bag.slots[4].item.itemID, 103, "item 3 untouched at slot 3")
-  eq(bag.slots[2].item.itemID, 101, "item 1 untouched at slot 1")
-  eq(bag.slots[5].item.itemID, 105, "item 5 stepped down into slot 4")
-  ok(bag.slots[1].item == nil, "slot 0 (where item 0 was) is now the hole")
+test("drop kept onto EMPTY incoming: stock place; the emptied kept slot leaves Keep; zero moves of ours", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  eq(Picture(bag), "_ 5 4 3 1 0 | 6 7 8")
+  ok(bag:Pickup(bag.slots[8]))                  -- item 7 (kept)
+  ok(bag:Drop(Cell(bag, 2)))                    -- onto empty physical 2
+  eq(bag.slots[3].item.itemID, 107); ok(bag.slots[8].item == nil)
+  ok(not S.IsKept(bag.store, 7), "7 emptied -> left Keep")
+  eq(Picture(bag), "_ 5 4 3 7 1 0 | 6 8", "7 is now a free cell in the pool (top-left), 7's item sits in 2")
 end)
 
-test("pin when the top incoming slot itself is free: one move, nothing shifts", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[2]))                  -- item 1
-  ok(bag:Drop(LockCell(bag)))
-  eq(Picture(bag), "4 3 2 _ 0 | 1 6 7 8")
-end)
-
-test("pin with no free slot above the item: full shift from the item (the only option)", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[3]))                  -- item 2; slot 0 free but BELOW it, irrelevant
-  ok(bag:Drop(LockCell(bag)))
-  eq(Picture(bag), "5 4 3 1 _ | 2 6 7 8")
-end)
-
-test("PinFromIncoming with fromSlot nil (external item): lands in the highest free slot, shifts from there", function()
-  local st = KeepStore(9, 3)
-  local slots = Bag(9, { 0, 1, 3, 5, 6, 7, 8 })         -- slots 2 and 4 free
-  local isFree = function(s) return slots[s + 1].item == nil end
-  local moves, e = S.PinFromIncoming(st, st.list[1], nil, nil, isFree)
-  eq(e, 4); eq(#moves, 1)                                -- 4<->5 only
-  eq(moves[1].from, 4); eq(moves[1].to, 5)
-  eq(st.boundary, 5); eq(st.list[1].order[1], 5)
-  local full = Bag(3, { 0, 1 }); local st2 = KeepStore(3, 1)
-  ok(S.PinFromIncoming(st2, st2.list[1], nil, nil, function(s) return full[s + 1].item == nil end) == nil, "no free slot -> nil")
-end)
-
-test("unpin the LOWEST keep slot onto empty incoming: one move, no second swap", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[7]))                  -- item 6 at slot 6 == boundary
-  ok(bag:Drop(Cell(bag, 2)))
-  eq(Picture(bag), "_ 5 4 3 6 1 0 | 7 8", "slot 6 released (empty) at top-left")
+test("drop kept onto OCCUPIED incoming: stock swap; kept-ness follows the SLOT", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[8])); ok(bag:Drop(Cell(bag, 2)))
+  eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
+  ok(S.IsKept(bag.store, 7) and not S.IsKept(bag.store, 2))
 end)
 
 test("loose onto kept (no Shift): stock swap; membership is by slot", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[3]))                  -- item 2
-  ok(bag:Drop(Cell(bag, 7)))                    -- onto item 7 (kept)
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3])); ok(bag:Drop(Cell(bag, 7)))
   eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
 end)
 
 test("kept onto kept: visual reorder only", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   ok(bag:Pickup(bag.slots[9])); ok(bag:Drop(Cell(bag, 6)))
   eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")
   eq(bag.slots[9].item.itemID, 108, "no physical move")
 end)
 
 test("Shift-drag: the cursor gap opens in the hovered item's column; dropping a LOOSE item lands there", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   ok(bag:Pickup(bag.slots[3]))                  -- item 2
-  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 7))        -- hover item 7 (keep row: lock 6 7 8)
+  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 7))
   local gap
   for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
   ok(gap and gap.anchorRef and gap.anchorRef.slotIndex == 7, "gap anchored to item 7")
   ok(bag:Drop(gap))
-  eq(Picture(bag), "5 4 3 1 0 | 6 7 2 8", "item 2 landed right after 7; incoming shifted, order kept")
+  eq(Picture(bag), "5 4 3 1 0 | 6 7 2 8", "item 2 landed right after 7; zero moves")
   bag:SetInsertMode(false)
 end)
 
 test("Shift-drag over the RIGHTMOST kept item: gap opens at the right wall, item slides left, and holds", function()
-  -- before:        lock@6 18@7 19@8 20@9 21@10         (10 columns)
-  -- hover 21:      lock@5 18@6 19@7 20@8 21@9 GAP@10   <- gap exactly where the mouse is
   local slots = Bag(22, { 0, 1, 2, 3, 4, 5, 18, 19, 20, 21 })
-  local st = S.NewStore(22); st.boundary = 18; st.list[1].order = { 18, 19, 20, 21 }
+  local st = KeepStore({ 18, 19, 20, 21 })
   local bag = B.New({ store = st, slots = slots, columns = 10 })
   local function keepRow()
     for _, r in ipairs(bag:Layout().rows) do if r.sectionID then
@@ -272,23 +229,20 @@ test("Shift-drag over the RIGHTMOST kept item: gap opens at the right wall, item
   ok(bag:Pickup(bag.slots[3]))
   bag:SetHover(Cell(bag, 21)); bag:SetInsertMode(true)
   eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10")
-  -- the still mouse is now over the gap; hovering it must not move it
   local gap; for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
   bag:SetHover(nil); bag:SetHover(gap)
   eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "stable over the gap")
-  -- re-hovering 21 (same anchor) must not move it either
   bag:SetHover(nil); bag:SetHover(Cell(bag, 21))
   eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "same anchor: holds")
   ok(bag:Drop(gap))
-  eq(st.list[1].order[#st.list[1].order], 17, "pinned item is LAST (slot 17 = new boundary-1), i.e. right of 21")
-  eq(st.boundary, 17)
+  eq(st.list[1].order[#st.list[1].order], 2, "pinned item (physical 2) is LAST, i.e. right of 21")
 end)
 
-test("loose onto loose / empty: stock swap and place", function()
-  local bag = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 2, 5 }), columns = 6 })
-  eq(Picture(bag), "_ _ 2 _ 0 | 5")
-  ok(bag:Pickup(bag.slots[1])); ok(bag:Drop(Cell(bag, 3)))
-  eq(Picture(bag), "_ 0 2 _ _ | 5")
+test("loose onto loose / empty: stock swap and place; free pool re-sorts", function()
+  local bag = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 2, 5 }), columns = 6 })
+  eq(Picture(bag), "_ _ _ 2 0 | 5"); eq(IncomingSlots(bag), "_1 _3 _4 2 0")
+  ok(bag:Pickup(bag.slots[1])); ok(bag:Drop(Cell(bag, 3)))          -- item 0 -> empty physical 3
+  eq(IncomingSlots(bag), "_0 _1 _4 3 2", "0 is free now and sorted first; occupied 3 2 descending")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -299,27 +253,25 @@ test("typed slots: one run above incoming, mixed kinds, do not shift the general
   all[#all + 1] = { bagID = 2, slot = 1, kind = "herb",   item = Item(900) }
   all[#all + 1] = { bagID = 2, slot = 2, kind = "herb" }
   all[#all + 1] = { bagID = 3, slot = 1, kind = "quiver", item = Item(901) }
-  local bag = B.New({ store = KeepStore(6, 1), slots = all, columns = 6 })
+  local bag = B.New({ store = KeepStore({ 5 }), slots = all, columns = 6 })
   eq(#bag.slots, 6, "typed slots are not in the flat general list")
   eq(#bag.typedSlots, 3)
-  eq(bag.store.boundary, 5); eq(Picture(bag), "_ _ _ 1 0 | 5")
+  eq(Picture(bag), "_ _ _ 1 0 | 5")
   local rows = bag:Layout().rows
   ok(rows[1].typed, "first row is the typed run")
   eq(#rows[1].cells, 3)
-  -- bag order reversed like incoming: quiver slot (last) is leftmost, herb slot 1 bottom-right
   eq(rows[1].cells[1].slotKind, "quiver"); eq(rows[1].cells[3].slotKind, "herb")
   eq(rows[1].cells[3].ref.item.itemID, 900)
   ok(not rows[2].typed, "incoming follows")
-  -- MOCK path: a typed item on the lock is refused (the mock has no cursor to land it with); a general
-  -- item on a typed cell is refused. In both cases the held item is released (never stuck).
+  -- MOCK: a typed item on the lock pins like an external one (lands in the lowest free general slot)
   ok(bag:Pickup(bag.typedSlots[1]))
-  ok(not bag:Drop(LockCell(bag)), "typed item cannot be pinned"); ok(bag.held == nil, "released")
+  ok(bag:Drop(LockCell(bag)), "typed item pins via the lowest free general slot")
+  eq(bag.slots[3].item.itemID, 900, "landed in physical 2 (lowest free)"); ok(S.IsKept(bag.store, 2))
+  ok(bag.typedSlots[1].item == nil)
+  -- a general item on a typed cell is refused and released
   ok(bag:Pickup(bag.slots[1]))
   ok(not bag:Drop(rows[1].cells[2]), "general item cannot be dropped on a typed cell"); ok(bag.held == nil)
   -- same-kind typed <-> typed is a stock swap/place; cross-kind is refused
-  ok(bag:Pickup(bag.typedSlots[1]))                                     -- herb item 900
-  ok(bag:Drop(rows[1].cells[2]), "herb -> empty herb slot")             -- cells[2] = herb slot 2 (empty)
-  eq(bag.typedSlots[2].item.itemID, 900); ok(bag.typedSlots[1].item == nil)
   ok(bag:Pickup(bag.typedSlots[3]))                                     -- quiver item
   ok(not bag:Drop(rows[1].cells[3]), "quiver -> herb slot refused")
 end)
@@ -356,50 +308,38 @@ test("Scan.Refs over the Mock provider: general first (flat index = bag order), 
   P.Pickup(0, 1); ok(refs[1].item == nil); P.Pickup(0, 2); eq(refs[2].item.itemID, 1)
 end)
 
--- ---------------------------------------------------------------------------
--- Phase L step 4: MoveQueue, live Drop through the queue, hideLocks (D14)
--- ---------------------------------------------------------------------------
-test("MoveQueue: one swap in flight at a time; next starts after completion; onDone fires once", function()
+test("MoveQueue: one op in flight at a time; a place completes on ONE unlock; onDone fires once", function()
   local calls = {}
   local P = { Pickup = function(b, s) calls[#calls + 1] = b .. ":" .. s end }
   local q = ns.MoveQueue.New(P, function(i) return 0, i + 1 end)
   local doneCount = 0
-  q:Push({ { from = 2, to = 3 }, { from = 3, to = 4 } }, function() doneCount = doneCount + 1 end)
-  eq(#calls, 2, "first swap issued as two Pickups"); eq(calls[1], "0:3"); eq(calls[2], "0:4")
-  ok(q:IsBusy())
-  q:OnLockChanged(false)                       -- one unlock: not done yet
-  eq(#calls, 2)
-  q:OnLockChanged(false)                       -- second unlock: swap landed, next goes
-  eq(#calls, 4); eq(calls[3], "0:4"); eq(calls[4], "0:5")
+  q:Push({ { place = true, bagID = 1, slot = 7 }, { place = true, bagID = 1, slot = 8 } }, function() doneCount = doneCount + 1 end)
+  eq(#calls, 1); eq(calls[1], "1:7"); ok(q:IsBusy())
+  q:OnLockChanged(false)                       -- one unlock completes a place
+  eq(#calls, 2); eq(calls[2], "1:8")
   q:OnBagUpdateDelayed()                       -- alternative completion signal
   ok(not q:IsBusy()); eq(doneCount, 1)
-  -- place op: a single Pickup
-  q:Push({ { place = true, bagID = 1, slot = 7 } })
-  eq(calls[5], "1:7"); eq(#calls, 5)
+  q:Push({ { from = 2, to = 3 } })             -- a swap: two Pickups, two unlocks
+  eq(#calls, 4); q:OnLockChanged(false); ok(q:IsBusy()); q:OnLockChanged(false); ok(not q:IsBusy())
   q:Abort(); ok(not q:IsBusy())
 end)
 
-test("live Drop on a lock: cursor item rides the chain as a sequence of PLACE ops; store updated", function()
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+test("live pin from incoming: ONE Pickup (put the cursor item back); store commits when it lands", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   bag.live = true
   local issued = {}
   bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = s end },
     function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
-  bag:SetCursor(bag.slots[3])                   -- item 2 (slot index 2) on the real cursor
+  bag:SetCursor(bag.slots[3])                   -- item 2 (physical 2) on the real cursor
   ok(bag:Drop(LockCell(bag)))
-  eq(bag.store.boundary, 5, "store already reflects the pin")
-  eq(bag.store.list[1].order[1], 5)
-  -- No free slot above index 2, so e = 2: chain is 2<->3, 3<->4, 4<->5. With the item already on the
-  -- cursor each step is ONE Pickup on the destination: place(3), place(4), place(5) (1-based slots).
-  eq(issued[1], 4, "first place: cursor item into slot index 3 (slot 4); its item comes onto the cursor")
-  eq(#issued, 1, "one op in flight at a time")
-  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[2], 5)
-  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[3], 6, "last place lands the chain at boundary-1 (index 5 = slot 6)")
-  bag.moveQueue:OnBagUpdateDelayed(); ok(not bag.moveQueue:IsBusy())
+  eq(#issued, 1); eq(issued[1], 3, "the one op: Pickup on its OWN slot (index 2 = slot 3) drops it back")
+  ok(not S.IsKept(bag.store, 2), "store not committed until the op lands")
+  bag.moveQueue:OnLockChanged(false)
+  ok(S.IsKept(bag.store, 2), "committed"); eq(bag.store.list[1].order[1], 2)
 end)
 
 test("hideLocks: external cursor with no free general slot emits no lock / gap cells", function()
-  local bag = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 1, 2, 3, 4, 5 }), columns = 6 })
+  local bag = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 1, 2, 3, 4, 5 }), columns = 6 })
   bag.live = true
   bag:SetCursor("external")
   ok(LockCell(bag) == nil, "full bag: lock hidden")
@@ -407,26 +347,29 @@ test("hideLocks: external cursor with no free general slot emits no lock / gap c
   eq(#rows[#rows].cells, 1, "the kept item still draws")
   bag:SetCursor(nil)
   ok(LockCell(bag) ~= nil, "cursor empty: lock back")
-  local bag2 = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 1, 3, 4, 5 }), columns = 6 })
+  local bag2 = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 1, 3, 4, 5 }), columns = 6 })
   bag2.live = true; bag2:SetCursor("external")
   ok(LockCell(bag2) ~= nil, "one free slot: lock shown")
 end)
 
-test("live Drop on a lock from a TYPED slot (herb bag): lands in the free general slot, then the chain", function()
-  -- general 0..5 with slot 2 free, keep = {5}; herb bag item on the cursor
-  local all = Bag(6, { 0, 1, 3, 4, 5 })
+test("live pin from OUTSIDE (typed / external): ONE Pickup into the lowest free general slot", function()
+  local all = Bag(6, { 0, 1, 3, 4, 5 })                               -- physical 2 free
   all[#all + 1] = { bagID = 2, slot = 1, kind = "herb", item = Item(900) }
-  local bag = B.New({ store = KeepStore(6, 1), slots = all, columns = 6 })
+  local bag = B.New({ store = KeepStore({ 5 }), slots = all, columns = 6 })
   bag.live = true
   local issued = {}
   bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = b .. ":" .. s end },
     function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
   bag:SetCursor(bag.typedSlots[1])
-  ok(bag:Drop(LockCell(bag)), "typed item pins like an external one")
-  eq(bag.store.boundary, 4)
-  eq(issued[1], "0:3", "first place: into the free general slot (index 2 = slot 3)")
-  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[2], "0:4")
-  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[3], "0:5", "lands at boundary-1 (index 4 = slot 5)")
+  ok(bag:Drop(LockCell(bag)))
+  eq(#issued, 1); eq(issued[1], "0:3", "placed into physical 2 (slot 3), the lowest free")
+  bag.moveQueue:OnLockChanged(false)
+  ok(S.IsKept(bag.store, 2)); eq(bag.store.list[1].order[1], 2)
+  -- external cursor, same path
+  local bag3 = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 1, 3, 4, 5 }), columns = 6 })
+  bag3.live = true; local iss3 = {}
+  bag3.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) iss3[#iss3 + 1] = s end }, function(i) return 0, i + 1 end)
+  bag3:SetCursor("external"); ok(bag3:Drop(LockCell(bag3))); eq(iss3[1], 3)
 end)
 
 -- ---------------------------------------------------------------------------

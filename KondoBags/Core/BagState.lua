@@ -132,9 +132,8 @@ function BagState:Layout(columns)
   input.cursorGap = self:CursorGap()
   -- D14: an external cursor item with no free general slot cannot be pinned; hide the targets.
   if self.held == "external" then
-    local free = false
-    for i = 1, self.store.boundary do if self.slots[i].item == nil then free = true; break end end
-    input.hideLocks = not free
+    local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
+    input.hideLocks = Sections.LowestFree(self.store, #self.slots, isFree) == nil
   end
   return Layout.Build(input)
 end
@@ -192,25 +191,12 @@ function BagState:SetInsertMode(on)
   if self.held then self:Emit("cursor") end
 end
 
--- Pin a LOOSE held item into `group` at the cursor gap anchored to `anchorRef` (nil = right after
--- the lock). Physical (D11/D13.2): keep grows by taking slot boundary-1; the item is shifted up
--- through the nearest free incoming slot above it, so only the items between that hole and the
--- top of incoming step down one.
-local function PinHeldAtGap(self, held, group, anchorRef)
-  local anchorSlot = anchorRef and anchorRef.slotIndex or nil
-  local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
-  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, anchorSlot, isFree)
-  self:ApplyMoves(moves)
-end
-
--- LIVE: the store must change WITH the physical bag, not before. PinFromIncoming et al. mutate the
--- store synchronously (right for the mock, where ApplyMoves swaps the table in the same call). Live,
--- the moves take frames; a store that already says "boundary-1 is kept" drawn against a bag where
--- boundary-1 still holds the BLOCKER shows the blocker as the kept item, and a mid-chain Reconcile
--- believes it. So live gestures run on a COPY, the old store keeps drawing, and the copy is committed
--- from the queue's onDone (which also triggers the rescan). Owner found this, 2026-11-18.
+-- LIVE: a store change must land WITH the one server op, not before -- otherwise the view draws the
+-- new store against the old bag for a frame or two and a mid-flight Reconcile trusts that. Live
+-- gestures run on a COPY; the copy is committed from the queue's onDone (zero ops = commit now).
 local function CopyStore(store)
-  local c = { nextID = store.nextID, boundary = store.boundary, list = {} }
+  local c = { nextID = store.nextID, kept = {}, list = {} }
+  for s, gid in pairs(store.kept) do c.kept[s] = gid end
   for i, g in ipairs(store.list) do
     local o = {}
     for k, s in ipairs(g.order) do o[k] = s end
@@ -219,16 +205,13 @@ local function CopyStore(store)
   return c
 end
 
--- Run `fn(storeCopy)` which returns the op list for the queue; push it and commit the copy when the
--- queue drains. Zero ops = commit now (pure bookkeeping, e.g. a visual reorder).
 local function LiveGesture(self, fn)
   local copy = CopyStore(self.store)
   local ops = fn(copy)
   if ops == nil then return false end
-  local function commit() self.store = copy; self.onStoreCommitted = self.onStoreCommitted and self.onStoreCommitted(copy) end
+  local function commit() self.store = copy end
   if #ops == 0 then commit(); self.cursorGap = nil; self:Emit("changed"); return true end
-  self.pendingStore = copy
-  self.moveQueue:Push(ops, function() self.pendingStore = nil; commit() end)
+  self.moveQueue:Push(ops, commit)
   self.cursorGap = nil; self:Emit("changed"); return true
 end
 
@@ -236,77 +219,70 @@ end
 function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
-  -- LIVE (D14): only lock / gap cells reach us; slot cells are Blizzard's. An "external" cursor item
-  -- (bank, mail) pins through PinFromIncoming(nil) when a general slot is free; the view hides the
-  -- lock cells when none is, so a nil result here means "nothing to do".
+  local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
+  local function opsFor(ops)   -- KondoBags_PinOp { slotIndex } -> queue op { place, bagID, slot }
+    local out = {}
+    for i, o in ipairs(ops) do local r = self.slots[o.slotIndex + 1]; out[i] = { place = true, bagID = r.bagID, slot = r.slot } end
+    return out
+  end
+
+  -- LIVE (D14 + D15): only lock / gap cells reach us; slot cells are Blizzard's.
   if self.live then
     local targetGroupID = cell.sectionID
     if not targetGroupID or (cell.kind ~= Layout.CELL_DROP and cell.kind ~= Layout.CELL_GAP) then return false end
     local anchorRef = cell.kind == Layout.CELL_GAP and cell.anchorRef or nil
     local anchorSlot = anchorRef and anchorRef.slotIndex or nil
-    local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
-    local function place(slotIndex) local r = self.slots[slotIndex + 1]; return { place = true, bagID = r.bagID, slot = r.slot } end
-    -- Every live gesture runs on a store COPY (see LiveGesture): the old store keeps drawing until the
-    -- physical moves have landed, so the blocker at boundary-1 is never shown as the kept item.
     return LiveGesture(self, function(store)
       local group = Sections.Find(store, targetGroupID)
       if not group then return nil end
-      -- Not in the general flat list: an external cursor (bank, mail, trade) or one of our TYPED
-      -- slots (herb bag, quiver). Needs a free general slot e to land in, then the chain to boundary-1.
       local fromOutside = held == "external" or (held.kind ~= nil and held.kind ~= "general")
       if fromOutside then
-        local moves, e = Sections.PinFromIncoming(store, group, nil, anchorSlot, isFree)
-        if not moves then return nil end
-        local ops = { place(e) }
-        for _, m in ipairs(moves) do ops[#ops + 1] = place(m.to) end
-        return ops
+        -- ONE Pickup into the lowest free general slot (= the top-left free cell); mark it kept.
+        local ops = Sections.PinFromOutside(store, group, anchorSlot, #self.slots, isFree)
+        if not ops then return nil end
+        return opsFor(ops)
       end
       if Sections.IsKept(store, held.slotIndex) then
-        -- kept -> lock/gap: visual reorder only; the item stays on the cursor for the player to drop
-        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)
+        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)   -- visual reorder; item stays on the cursor
         return {}
       end
-      -- Loose item on the cursor -> pin. The item is already OFF its slot (Blizzard picked it up), so
-      -- each chain move { from, to } is one PLACE on `to`: it drops the cursor item there and picks up
-      -- the displaced one, which the next place consumes. e..boundary-1, one Pickup each.
-      local moves = Sections.PinFromIncoming(store, group, held.slotIndex, anchorSlot, isFree)
-      local ops = {}
-      for _, m in ipairs(moves) do ops[#ops + 1] = place(m.to) end
-      if #ops == 0 then ops[1] = { place = true, bagID = held.bagID, slot = held.slot } end   -- already at boundary-1
-      return ops
+      -- Loose item from incoming, currently on the cursor: mark its slot kept (zero net moves) and put
+      -- the item back where it came from with ONE Pickup on its own slot.
+      if not Sections.Pin(store, group, held.slotIndex, anchorSlot) then return nil end
+      return { { place = true, bagID = held.bagID, slot = held.slot } }
     end)
   end
+
+  -- MOCK: the table IS the bag; gestures apply synchronously.
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
   local function refuse() self.held = nil; CloseCursorGap(self); self:Emit("cursor"); return false end
-  -- Typed (restricted-bag) slots: no pin and no cross-kind move. Within the typed run a stock
-  -- swap/place between two slots of the SAME kind is allowed; anything else puts the item back.
   local heldTyped = held.kind ~= nil and held.kind ~= "general"
-  if heldTyped or cell.typed then
-    local target = cell.kind == Layout.CELL_SLOT and cell.ref or nil
-    if not target or target == held then return refuse() end
-    if not heldTyped or not cell.typed or target.kind ~= held.kind then return refuse() end
-    held.item, target.item = target.item, held.item          -- M4: PickupContainerItem pair
-    return done()
-  end
-  local heldKept = Sections.IsKept(self.store, held.slotIndex)
-
-  -- Group targets: lock cell, the cursor gap, or any group cell while Shift is down (D12: all groups
-  -- share ONE physical keep range, so any group can be pinned into or reordered across).
   local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
   local onGap = cell.kind == Layout.CELL_GAP
-  if targetGroup and (cell.kind == Layout.CELL_DROP or onGap or self.insertMode) then
-    -- Where the item lands: the gap's anchor (dropped on the gap, or anywhere in the group with
-    -- Shift down), or the lock (plain drop on the lock = first).
-    local anchorRef
-    if onGap then anchorRef = cell.anchorRef
-    elseif self.insertMode then local gap = self:CursorGap(); anchorRef = gap and gap.anchorRef or nil
-    else anchorRef = nil end
-    if heldKept then
-      -- kept -> a gap in a group: visual move only (within or across groups)
-      Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorRef and anchorRef.slotIndex or nil)
+  local anchorRef
+  if onGap then anchorRef = cell.anchorRef
+  elseif self.insertMode then local gap = self:CursorGap(); anchorRef = gap and gap.anchorRef or nil end
+  local anchorSlot = anchorRef and anchorRef.slotIndex or nil
+
+  if heldTyped then
+    -- typed item: same-kind typed <-> typed is a stock swap; onto a lock = pin from outside (one place)
+    if targetGroup and (cell.kind == Layout.CELL_DROP or onGap) then
+      local ops, h = Sections.PinFromOutside(self.store, targetGroup, anchorSlot, #self.slots, isFree)
+      if not ops then return refuse() end
+      self.slots[h + 1].item, held.item = held.item, nil
       return done()
     end
-    PinHeldAtGap(self, held, targetGroup, anchorRef)
+    local target = cell.kind == Layout.CELL_SLOT and cell.ref or nil
+    if not target or target == held or not cell.typed or target.kind ~= held.kind then return refuse() end
+    held.item, target.item = target.item, held.item
+    return done()
+  end
+  if cell.typed then return refuse() end
+
+  local heldKept = Sections.IsKept(self.store, held.slotIndex)
+  if targetGroup and (cell.kind == Layout.CELL_DROP or onGap or self.insertMode) then
+    if heldKept then Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)
+    else Sections.Pin(self.store, targetGroup, held.slotIndex, anchorSlot) end
     return done()
   end
 
@@ -314,23 +290,14 @@ function BagState:Drop(cell)
   local target = cell.ref
   if target == held then return done() end
   local targetKept = Sections.IsKept(self.store, target.slotIndex)
-
   if heldKept and targetKept then
-    -- kept onto kept, no Shift: take that item's visual position (any group)
-    Sections.MoveToPositionOf(self.store, held.slotIndex, target.slotIndex)
+    Sections.MoveToPositionOf(self.store, held.slotIndex, target.slotIndex)   -- visual reorder
     return done()
   end
-
-  if heldKept and not targetKept then
-    -- kept -> incoming: leaves keep (D11 UnpinToIncoming; <= 2 moves)
-    local moves = Sections.UnpinToIncoming(self.store, held.slotIndex, target.slotIndex, target.item ~= nil)
-    self:ApplyMoves(moves)
-    return done()
-  end
-
-  -- loose onto kept (stock swap: the loose item is now kept in that visual spot, the kept one is
-  -- loose where the held one was) or loose <-> loose: stock swap / place
-  self:ApplyMoves({ { from = held.slotIndex, to = target.slotIndex } })
+  -- Stock swap / place between any two general slots. Kept-ness follows the SLOT (D15): a kept item
+  -- dropped on incoming leaves Keep; the incoming item that lands in a kept slot is now kept there.
+  held.item, target.item = target.item, held.item
+  if heldKept and held.item == nil then Sections.Unpin(self.store, held.slotIndex) end     -- D13.1: emptied kept slot leaves Keep
   return done()
 end
 
@@ -343,9 +310,8 @@ end
 
 -- Right-click on a group's lock: remove the group; its items drop into incoming (D11 moves).
 function BagState:RemoveGroup(sectionID)
-  local moves = Sections.Dissolve(self.store, sectionID)
-  if not moves then return false end
-  self:ApplyMoves(moves)
+  -- D15: its slots simply become incoming; zero moves.
+  if not Sections.Dissolve(self.store, sectionID) then return false end
   self:Emit("changed")
   return true
 end

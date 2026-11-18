@@ -23,13 +23,12 @@ local function InitDB()
   KondoBagsDB.ammoGlyph = KondoBagsDB.ammoGlyph or "pouch"               -- "pouch" (Blizzard slot art) | "ammo" (projectile icons)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
-  -- Mock store: a fresh one keeps just the top slot (the mock's hearthstone) in the default Keep group.
+  -- Mock store: a fresh one keeps just the mock's hearthstone slot in the default Keep group (D15).
   local store = KondoBagsCharDB.mockSections
-  local slotCount = 22   -- the mock's general slots (16 + 6); typed bags are not in the flat index
-  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.boundary) ~= "number" then
-    store = ns.Sections.NewStore(slotCount)
-    store.boundary = slotCount - 1
-    store.list[1].order = { slotCount - 1 }
+  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" then
+    store = ns.Sections.NewStore()
+    store.kept[ns.Mock.HEARTHSTONE_SLOT] = store.list[1].id
+    store.list[1].order = { ns.Mock.HEARTHSTONE_SLOT }
     KondoBagsCharDB.mockSections = store
   end
   -- Live store (KondoBagsCharDB.sections, SPECS/00 "Saved variables"): Reconcile validates it against
@@ -214,10 +213,12 @@ local function Slash(msg)
     local free = {}
     for k, n in pairs(summary.free) do free[#free + 1] = k .. "=" .. n end
     table.sort(free)
+    local kept = 0
+    for _ in pairs(b.store.kept) do kept = kept + 1 end
     Print("version %s | source %s | provider %s | %d general + %d typed slots | free %s"
-      .. " | %d group(s), boundary %d | theme %s | %d cols | edit mode: %s",
+      .. " | %d group(s), %d kept | theme %s | %d cols | edit mode: %s",
       tostring(version), source or "-", ns.Client.Active().name, summary.general, summary.typed, table.concat(free, " "),
-      #b.store.list, b.store.boundary, KondoBagsDB.theme, KondoBagsCharDB.window.columns or 10, ns.EditMode.Status())
+      #b.store.list, kept, KondoBagsDB.theme, KondoBagsCharDB.window.columns or 10, ns.EditMode.Status())
   else
     Print("/kondo - toggle live window | mock | theme [classic|modern] | columns N | tint | reset | options | status")
   end
