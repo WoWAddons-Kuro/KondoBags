@@ -141,15 +141,42 @@ stock bags hide the texture entirely (`ContainerFrame.Vanilla.lua`). We draw it 
 
 ## Bringup
 
-- [ ] Quest highlight: provider `QuestInfo`, `Scan` -> `item.quest`, `DressCell` quest texture + pulse animation group
-- [ ] `_EXTERNAL_APIS/wow_bag_toggle_api_and_bagnon_pattern.md` written (done 2026-11-18)
-- [ ] `UI/StockBags.lua`: sink frame, `SetID` + `OnShow` hooks, `combinedBags` cvar, toggle hooks with debugstack dedupe, `CloseAllBags(nil)` hook, interaction-manager auto display, `OnWindowShown` (bag bar + sound)
-- [ ] `KondoBags.lua`: remove mock source; `ns.ToggleBags/OpenBags/CloseBags` with the stock gates; pre-build on `PLAYER_ENTERING_WORLD`; `/kondo` toggle; `ns.StockBags.Setup()` on `PLAYER_LOGIN`
-- [ ] `UI/Window.lua`: remove carry icon, mock destroy popup, world-click hook, mock gesture branches; call `OnWindowShown`
-- [ ] TOC: add `UI\StockBags.lua`; drop `Mock\MockSnapshot.lua`. Delete `Mock/MockSnapshot.lua` (`git rm`)
-- [ ] `spec/run.lua` still green (`lua5.1 spec/run.lua`); `luacheck` clean
-- [ ] SPECS/00: step 5 checked off with a pointer here; `/kondo mock` removed from step 2 milestone text; README "Status" + CHANGELOG entry
-- [ ] In-game verification (owner), both clients: `B`, bag-bar buttons, `/kondo`, Escape, vendor/mail/bank auto-open and close, no stock frame ever visible, bank bags still open as stock at the bank on Era, item clicks not blocked after a vendor-opened session (taint check: `/console taintLog 1`)
+- [x] Quest highlight: provider `QuestInfo`, `Scan` -> `item.quest`, `DressCell` quest texture + pulse animation group
+- [x] `_EXTERNAL_APIS/wow_bag_toggle_api_and_bagnon_pattern.md` written (done 2026-11-18)
+- [x] `UI/StockBags.lua`: sink frame, `SetID` + `OnShow` hooks, `combinedBags` cvar, toggle hooks with debugstack dedupe, `CloseAllBags` hook, interaction-manager auto display, `OnWindowShown` (bag bar + sound)
+- [x] `KondoBags.lua`: remove mock source; `ns.ToggleBags/OpenBags/CloseBags` with the stock gates; pre-build on `PLAYER_ENTERING_WORLD`; `/kondo` toggle; `ns.StockBags.Setup()` on `PLAYER_LOGIN`
+- [x] `UI/Window.lua`: remove carry icon, mock destroy popup, world-click hook, mock gesture branches; call `OnWindowShown`
+- [x] TOC: add `UI\StockBags.lua`; drop `Mock\MockSnapshot.lua`. Delete `Mock/MockSnapshot.lua` (`git rm`)
+- [x] `spec/run.lua` green (27 tests); `luacheck` 0 errors
+- [x] SPECS/00: step 5 checked off with a pointer here; `/kondo mock` removed from step 2 milestone text; README "Status" + CHANGELOG entry
+- [x] In-game verification (owner, Forever, 2026-11-18): `B`, bag-bar buttons, `/kondo`, Escape, first `B` after `/reload`, no stock frame visible, kept -> other group drops on mouse-up. **Era and the taint check (`/console taintLog 1` after a vendor session) still to run.**
+
+### Findings while bringing up (2026-11-18)
+
+- **Escape vs. the first-`B` reopen** (`903dec3`). Stock `ToggleBackpack_Individual` calls `CloseAllBags()` itself when the (invisible) stock
+  backpack is open, so a `CloseAllBags` hook that closes our window makes the following `ToggleBackpack` hook reopen it. Name-matching the
+  stack is NOT viable: `Blizzard_GameMenuEsc` dispatches Esc handlers through `securecallfunction(fn)`, so `CloseAllWindows` never appears
+  in `debugstack()`. Resolution: a one-frame flag handoff -- the `CloseAllBags` hook closes and sets `closedByStock`; a `Toggle*` hook on the
+  same stock call consumes it instead of toggling; `C_Timer.After(0)` clears it. R9's "CloseAllBags(nil) for Escape only" pseudocode above is
+  superseded by this.
+- **Profession bag in the reagent-bag slot** (`5dae33e`). Forever allows a herb bag in `Enum.BagIndex.ReagentBag` (5). `BagKind` must decide by
+  family bits first; only a family-less bag in slot 5 is the reagent bag. `ItemFitsKind("reagent")` refuses family-bagged items.
+- **Typed-cell tint on occupied cells** (`eb63acf`). The `ItemButton` icon is a full-cell BORDER-layer texture that covers the Quickslot ring, so
+  tinting `NormalTexture` can only ever show on EMPTY cells. Occupied typed cells carry the kind tint on the OVERLAY `IconBorder` when the item
+  has no quality colour.
+
+### Added in the same tag (owner requests, 2026-11-18)
+
+- **`KondoBagsDB.typedGlyph`** = `"bag"` (default) | `"kind"`: empty typed-slot art is the equipped bag's own icon (provider `BagIcon(bag)` ->
+  `ref.bagIcon`) or the theme's item-type art. Replaces the ammo-only `ammoGlyph`. Options radios aligned (Section:Add dx is cumulative).
+- **No-drop mark** (`cd7fecf`): while an item is carried, typed cells whose family refuses it (`Client.ItemFitsKind(heldFamily, kind)`,
+  `BagState:HeldFits`) show the loot-roll Pass circle-X tinted `{1, .55, .55}`; occupied ones are also dimmed; empty ones are not. General
+  cells never marked. Provider `ItemFamily(itemIDOrLink)`; `SyncCursor` passes the carried family to `SetCursor(ref, family)`.
+- **Slim lock** (`113cff8`..`5995ff2`): a group whose items fill whole rows exactly gets its lock emitted `slim` at `col 0` on its top row
+  (`KondoBags_LayoutResult.slimGutter`); the view widens the window by one gutter, draws the Quickslot ring at half width and the key glyph at
+  full size, unclipped. Theme: `slimLockScale`, `slimDropGlyph`, `slimLockBg`.
+- **Kept -> other group drop** (`cf0d0af`): the live reorder issues ONE `Pickup` on the item's own slot so the real cursor drops on mouse-up.
+- `/kondo cursor`: debug readout of the carried item's family, per-kind fit, `BagState.held/heldFamily`, and which typed cells are marked.
 
 ## Open questions
 

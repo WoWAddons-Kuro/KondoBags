@@ -389,13 +389,13 @@ can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we ow
 
 **Step 5 — Replace the default bags**
 
-- [ ] **Spec: `SPECS/01_Stock_Bag_Replacement.md`.** Bagnon/BagBrother pattern: `hooksecurefunc` on `ToggleBackpack` / `ToggleBag` /
+- [x] **Spec: `SPECS/01_Stock_Bag_Replacement.md`.** Bagnon/BagBrother pattern: `hooksecurefunc` on `ToggleBackpack` / `ToggleBag` /
       `ToggleAllBags` / `CloseAllBags` (never replace the globals: taint), stock held-bag `ContainerFrameN` re-parented into a hidden sink
       on `SetID`, Forever `combinedBags` cvar forced off, auto open/close from `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE`; bag-bar
       highlight, sounds, Escape; window pre-built at login; bank bags pass through as stock until M7
-- [ ] no setting: installed = stock bags replaced (owner decision 2026-11-18)
-- [ ] `Mock/MockSnapshot.lua` out of the TOC and deleted; `/kondo mock` removed (`Client/Mock.lua` stays for `spec/run.lua`)
-- Milestone: default bags not needed in normal play
+- [x] no setting: installed = stock bags replaced (owner decision 2026-11-18)
+- [x] `Mock/MockSnapshot.lua` out of the TOC and deleted; `/kondo mock` removed (`Client/Mock.lua` stays for `spec/run.lua`)
+- Milestone: default bags not needed in normal play -- **reached on Forever 2026-11-18** (owner playing live); Era run still pending
 
 Exit criteria (whole phase): right-click use, drag, split-stack, vendor sell and trade all work from the window, in and out of combat; pins survive reload; an external item pins when a slot is free and has nowhere to land when none is.
 

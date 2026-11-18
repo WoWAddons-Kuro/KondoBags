@@ -521,10 +521,10 @@ local function DressCell(b, cell, theme)
     SetNoDrop(b, refuses, item ~= nil, theme)
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     if cell.slim then
-      -- Slim lock (gutter cell, half width). Owner: slim the BORDER, not the key. The stock Quickslot
-      -- ring is drawn squeezed to the slim cell (the art stretches cleanly enough at 2:1), the flat
-      -- theme's 1px ring already follows the cell; the key glyph keeps its full cell size, centred,
-      -- overhanging the narrow border on both sides -- no clipping.
+      -- Slim lock (gutter cell, half width). Owner: slim the BORDER, not the key, and CLIP the key to
+      -- the border. The Quickslot ring is squeezed to the slim cell; the key glyph keeps its full cell
+      -- size centred. WoW only clips child FRAMES (SetClipsChildren), never a frame's own textures, so
+      -- the slim glyph is drawn on a clipping child frame (b.slimClip) the size of the cell interior.
       if b.normal and theme.slotNormal then
         local sn = theme.slotNormal
         local ratio = sn.size / theme.cell.size                      -- ring art : cell (64 : 37 on classic)
@@ -533,13 +533,26 @@ local function DressCell(b, cell, theme)
         b.normal:Show()
       end
       local g = theme.slimDropGlyph or theme.dropGlyph
-      SetGlyph(b, g)
+      SetGlyph(b, g)                                                 -- sets file / alpha / tint on b.emptyIcon
+      b.emptyIcon:Hide()                                             -- ...which we mirror onto the clipped copy
+      if not b.slimClip then
+        b.slimClip = CreateFrame("Frame", nil, b)
+        b.slimClip:SetClipsChildren(true)
+        b.slimClip:SetFrameLevel(b:GetFrameLevel() + 1)
+        b.slimClip.icon = b.slimClip:CreateTexture(nil, "ARTWORK")
+        b.slimClip.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+      end
+      local inset = g.inset or 0
+      b.slimClip:ClearAllPoints()
+      b.slimClip:SetPoint("TOPLEFT", inset, -inset); b.slimClip:SetPoint("BOTTOMRIGHT", -inset, inset)
       local full = theme.cell.size - 2 * (g.inset or 0)
-      b.emptyIcon:ClearAllPoints()
-      b.emptyIcon:SetPoint("CENTER"); b.emptyIcon:SetSize(full, full)
-      b:SetClipsChildren(false)
+      local ic = b.slimClip.icon
+      ic:SetTexture(g.file); ic:SetDesaturated(g.desaturate and true or false); ic:SetAlpha(g.alpha or 0.5)
+      local t = g.tint or 1; ic:SetVertexColor(t, t, t)
+      ic:ClearAllPoints(); ic:SetPoint("CENTER", b.slimClip, "CENTER"); ic:SetSize(full, full)
+      b.slimClip:Show()
     else
-      b:SetClipsChildren(false)
+      if b.slimClip then b.slimClip:Hide() end
       if b.normal and theme.slotNormal then b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size) end
       SetGlyph(b, theme.dropGlyph)
     end
