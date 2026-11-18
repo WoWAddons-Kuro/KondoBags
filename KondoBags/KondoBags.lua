@@ -21,18 +21,25 @@ local function InitDB()
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
 end
 
-local mockSlots
+local bag   -- KondoBags_BagState (controller); created on first open
+
+local function EnsureBag()
+  if bag then return bag end
+  bag = ns.BagState.New({
+    store = KondoBagsCharDB.mockSections,
+    slots = ns.Mock.Slots(),
+    columns = KondoBagsCharDB.window.columns or 10,
+  })
+  bag:AddListener(function(event, b)
+    if event == "changed" then KondoBagsCharDB.window.columns = b.columns end
+  end)
+  ns.Window.Attach({ bag = bag, money = ns.Mock.Money(), themeID = KondoBagsDB.theme })
+  return bag
+end
+ns.EnsureBag = EnsureBag
 
 local function OpenMock()
-  mockSlots = mockSlots or ns.Mock.Slots()
-  ns.Window.Setup({
-    store = KondoBagsCharDB.mockSections,
-    slots = mockSlots,
-    money = ns.Mock.Money(),
-    columns = KondoBagsCharDB.window.columns or 10,
-    themeID = KondoBagsDB.theme,
-    onChanged = function() end,   -- store is a live SavedVariables table; nothing to flush
-  })
+  EnsureBag()
   ns.EditMode.ApplyToWindow()
   ns.Window.Toggle()
 end
@@ -53,12 +60,14 @@ local function Slash(msg)
     end
   elseif cmd == "columns" or cmd == "cols" then
     local n = tonumber(rest)
-    if n then KondoBagsCharDB.window.columns = n; ns.Window.SetColumns(n) end
-    Print("%d columns", ns.Window.GetColumns())
+    if n then EnsureBag():SetColumns(n) end
+    Print("%d columns", EnsureBag().columns)
   elseif cmd == "reset" then
     KondoBagsCharDB.mockSections = ns.Sections.NewStore()
-    mockSlots = nil
-    if ns.Window.IsShown() then ns.Window.Hide(); OpenMock() end
+    local wasShown = ns.Window.IsShown()
+    bag = nil
+    ns.Window.Hide()
+    if wasShown then OpenMock() end
     Print("mock sections and items reset")
   elseif cmd == "status" then
     local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")

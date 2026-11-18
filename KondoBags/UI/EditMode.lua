@@ -12,7 +12,7 @@
 --   lib:RegisterCallback('enter'|'exit'|'layout', fn);  lib:IsInEditMode()
 
 local _, ns = ...
-local Window, Theme, Sections = ns.Window, ns.Theme, ns.Sections
+local Window, Theme, Layout = ns.Window, ns.Theme, ns.Layout
 local EditMode = {}
 ns.EditMode = EditMode
 
@@ -53,9 +53,14 @@ function EditMode.OnWindowResized(w, h)
 end
 
 local function SnapColumnsFromWidth(width)
-  local theme = Theme.Get(Window.state.themeID)
+  local theme = Theme.Get(Window.ThemeID())
   local cols = Theme.ColumnsForWidth(theme, width)
-  return math.max(Sections.MinColumns(), math.min(24, cols))
+  return math.max(Layout.MIN_COLUMNS, math.min(24, cols))
+end
+
+local function SetColumns(cols)
+  Placement().columns = cols
+  if ns.EnsureBag then ns.EnsureBag():SetColumns(cols) end   -- controller re-renders via its listener
 end
 
 local function OnPlaceholderMoved(frame)
@@ -96,8 +101,7 @@ local function CreatePlaceholder()
     placeholder.resizing = false
     placeholder:StopMovingOrSizing()
     local cols = SnapColumnsFromWidth(placeholder:GetWidth())
-    Placement().columns = cols
-    Window.SetColumns(cols)          -- re-renders; OnWindowResized snaps the placeholder
+    SetColumns(cols)                 -- re-renders; OnWindowResized snaps the placeholder
     placeholder.label:SetText("KondoBags  " .. cols .. " columns")
   end)
   placeholder:SetScript("OnSizeChanged", function(self, w)
@@ -106,7 +110,7 @@ local function CreatePlaceholder()
 
   lib:AddFrame(placeholder, OnPlaceholderMoved, defaultPos, "KondoBags")
   lib:AddFrameSettingsButtons(placeholder, {
-    { text = "Reset size", click = function() Placement().columns = 10; Window.SetColumns(10) end },
+    { text = "Reset size", click = function() SetColumns(10) end },
   })
   return placeholder
 end

@@ -38,8 +38,8 @@ ns.Theme.Register({
   slotEmptyIcon = { file = "Interface\\Icons\\INV_Misc_Bag_08", desaturate = true, alpha = 0.45, inset = 2, tint = 0.9 },
   slotFlat = nil,
   slotBorder = nil,
-  plusGlyph = { text = "+", font = "GameFontNormalLarge", color = { 1, 0.82, 0, 0.55 } },
-  handleGlyph = { text = "\226\137\161", font = "GameFontNormalLarge", color = { 1, 0.82, 0, 0.55 } },  -- U+2261
-  divider = nil   -- no line between sections; the row break alone separates them,
+  -- Section drop cell: a faded lock icon over the empty-slot art. Drop an item on it to pin it there.
+  dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 7 },
+  divider = nil,
   junkTint = { 0.55, 0.55, 0.55 },
 })
