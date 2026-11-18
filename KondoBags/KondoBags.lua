@@ -200,6 +200,9 @@ local function Slash(msg)
       fits[#fits + 1] = k .. "=" .. (ns.Client.ItemFitsKind(fam, k) and "yes" or "no")
     end
     Print("cursor: %s family=%s | %s", tostring(link or itemID), tostring(fam), table.concat(fits, " "))
+    local b = liveBag
+    Print("  BagState: held=%s heldFamily=%s HeldFits(herb)=%s | marked cells: %s", b and tostring(b.held) or "-",
+      b and tostring(b.heldFamily) or "-", b and tostring(b:HeldFits("herb")) or "-", ns.Window.DebugNoDrop())
   elseif cmd == "status" then
     local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")
     local b = EnsureBag()

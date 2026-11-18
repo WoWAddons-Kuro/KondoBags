@@ -740,6 +740,18 @@ function Window.RefreshRef(ref)
   end
 end
 
+-- Debug (/kondo cursor): which shown typed cells carry the no-drop mark, as "kind:slot".
+function Window.DebugNoDrop()
+  local out = {}
+  for _, pool in ipairs({ secureCells, cells }) do
+    for _, b in ipairs(pool) do
+      if b:IsShown() and b.cell and b.cell.slotKind then
+        out[#out + 1] = b.cell.slotKind .. ":" .. tostring(b.cell.ref and b.cell.ref.slot) .. (b.noDrop and b.noDrop:IsShown() and "=X" or "=ok")
+      end
+    end
+  end
+  return #out > 0 and table.concat(out, " ") or "(none)"
+end
 -- ---------------------------------------------------------------------------
 -- public
 -- ---------------------------------------------------------------------------
