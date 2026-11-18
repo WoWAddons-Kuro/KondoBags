@@ -20,6 +20,7 @@ local function InitDB()
   if KondoBagsDB.kindTint == nil then KondoBagsDB.kindTint = true end   -- border tint on restricted-bag cells
   KondoBagsDB.typedGlyph = KondoBagsDB.typedGlyph or "bag" -- empty typed-slot art: "bag" (equipped bag's icon) | "kind" (item-type art)
   KondoBagsDB.ammoGlyph = nil                                             -- pre-release key, retired
+  if KondoBagsDB.showKeys == nil then KondoBagsDB.showKeys = false end   -- keyring clients: draw held keys as a typed run (default off)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { columns = 10 }   -- anchor chosen lazily by EditMode.Placement (stock bag spot on first run)
   KondoBagsCharDB.mockSections = nil                                      -- M0 mockup store, retired (SPECS/01 R5)
@@ -186,6 +187,13 @@ local function OnBagsChanged()
   lastLocked = nil
   SyncCursor()
   ns.Window.SetMoney(GetMoney and GetMoney() or 0)
+end
+
+-- Force a full rescan now (a setting changed which bags / slots we draw, e.g. showKeys).
+function ns.Rescan()
+  if not liveBag then return end
+  dirty = true
+  OnBagsChanged()
 end
 
 -- ---------------------------------------------------------------------------

@@ -17,10 +17,26 @@ end
 -- Backpack + 4 bags, then the keyring (KEYRING_CONTAINER, negative) if it has slots.
 function P.BagIDs()
   local ids = {}
+  -- Does this client actually show a keyring? GetContainerNumSlots(KEYRING_CONTAINER) answers for the
+  -- container ID on EVERY client (32 on Era 1.15, which has no keyring UI at all), so slot count is not
+  -- the signal. Stock gates on C_ActionBar.ShouldShowKeyring() (Forever), GetKeyRingSize() and the
+  -- showKeyring cvar (_ref/blizzard/forever/ContainerFrame.lua:10,80,238; classic_era/
+  -- ContainerFrame_Shared.lua:118-124). Same three, in that order of trust.
+  local function HasKeyring()
+    if not KEYRING_CONTAINER then return false end
+    if C_ActionBar and C_ActionBar.ShouldShowKeyring then return C_ActionBar.ShouldShowKeyring() and true or false end
+    if GetKeyRingSize then return (GetKeyRingSize() or 0) > 0 end
+    if C_CVar and C_CVar.GetCVarBool then
+      local ok, shown = pcall(C_CVar.GetCVarBool, "showKeyring")
+      if ok and shown ~= nil then return shown end
+    end
+    return false
+  end
+  P.HasKeyring = HasKeyring
   for bag = 0, NUM_BAG_SLOTS or 4 do
     if P.NumSlots(bag) > 0 then ids[#ids + 1] = bag end
   end
-  if KEYRING_CONTAINER and P.NumSlots(KEYRING_CONTAINER) > 0 then ids[#ids + 1] = KEYRING_CONTAINER end
+  if HasKeyring() and KondoBagsDB and KondoBagsDB.showKeys and P.NumSlots(KEYRING_CONTAINER) > 0 then ids[#ids + 1] = KEYRING_CONTAINER end
   return ids
 end
 

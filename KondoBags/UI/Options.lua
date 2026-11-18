@@ -144,6 +144,14 @@ local function CreateOptions()
   end
   GlyphRadio("bag", "Empty special-bag slots show the equipped bag's own icon (Blizzard style)")
   GlyphRadio("kind", "Empty special-bag slots show item-type art (herb, arrow, soul shard, ...)")
+  -- Keyring (only on clients that have one): MIRROR the held keys as a typed run, occupied slots only.
+  -- Off by default. The keyring itself is never ours: its button and keybind always open Blizzard's.
+  local P = ns.Client.Active()
+  if P.HasKeyring and P.HasKeyring() then
+    bt:Add(Check(bt, "showKeys", "Show keys in Kondo Backpack",
+      "Mirrors the keys on your keyring as a row above your items (only slots that hold a key). The keyring button and keybind still open Blizzard's keyring as normal.",
+      function() if ns.Rescan then ns.Rescan() end end), 26, -8)
+  end
   bt:Finish()
 
   -- Section: Reset

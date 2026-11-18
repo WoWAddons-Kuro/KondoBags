@@ -18,14 +18,17 @@ local sink                       -- KondoBagsStockBagSink: hidden frame that swa
 
 local function StockParent() return ContainerFrameContainer or UIParent end
 
--- KondoBags_HeldBagID: a bag the active provider draws (backpack, bags 1-4, reagent, Era keyring).
+-- KondoBags_HeldBagID: a bag the active provider draws (backpack, bags 1-4, reagent; NEVER the keyring).
 function StockBags.IsOurBag(bagID)
   if bagID == nil then return false end
+  -- The KEYRING IS NEVER OURS (owner, 2026-11-18): its button and keybind always open Blizzard's own
+  -- keyring frame. KondoBagsDB.showKeys only MIRRORS the held keys as a typed run inside our window;
+  -- it never claims the container, so the provider's BagIDs() is not consulted for the keyring here.
+  if KEYRING_CONTAINER and bagID == KEYRING_CONTAINER then return false end
   for _, id in ipairs(ns.Client.Active().BagIDs()) do if id == bagID then return true end end
   -- An empty bag slot has no BagIDs() entry but is still a held bag, never a bank bag.
   local maxHeld = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4
   if bagID >= 0 and bagID <= maxHeld then return true end
-  if KEYRING_CONTAINER and bagID == KEYRING_CONTAINER then return true end
   return false
 end
 
@@ -141,7 +144,7 @@ end
 -- R7: stock parity on our window's show / hide
 -- ---------------------------------------------------------------------------
 local BAR_BUTTONS = { "MainMenuBarBackpackButton", "CharacterBag0Slot", "CharacterBag1Slot", "CharacterBag2Slot",
-  "CharacterBag3Slot", "CharacterReagentBag0Slot", "KeyRingButton" }
+  "CharacterBag3Slot", "CharacterReagentBag0Slot" }
 
 function StockBags.OnWindowShown(shown)
   for _, name in ipairs(BAR_BUTTONS) do

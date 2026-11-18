@@ -34,12 +34,17 @@ function Scan.Refs(provider)
     local n = provider.NumSlots(bag)
     -- Typed bags carry the equipped bag's own icon so an empty cell can show "this quiver" (optional on a provider).
     local bagIcon = (kind ~= "general" and provider.BagIcon) and provider.BagIcon(bag) or nil
+    -- Keyring: OCCUPIED slots only (owner, 2026-11-18). An empty key slot cannot take anything the
+    -- player can place, so drawing 32 blanks says nothing; the run is just the keys you hold.
+    local occupiedOnly = kind == "keyring"
     for slot = 1, n do
       local raw = provider.SlotInfo(bag, slot)
-      local quest = (raw and provider.QuestInfo) and provider.QuestInfo(bag, slot) or nil
-      local ref = { bagID = bag, slot = slot, kind = kind, bagIcon = bagIcon, item = ItemView(raw, quest) }
-      into[#into + 1] = ref
-      if not ref.item then summary.free[kind] = (summary.free[kind] or 0) + 1 end
+      if raw or not occupiedOnly then
+        local quest = (raw and provider.QuestInfo) and provider.QuestInfo(bag, slot) or nil
+        local ref = { bagID = bag, slot = slot, kind = kind, bagIcon = bagIcon, item = ItemView(raw, quest) }
+        into[#into + 1] = ref
+        if not ref.item then summary.free[kind] = (summary.free[kind] or 0) + 1 end
+      end
     end
   end
   summary.general, summary.typed = #general, #typed
