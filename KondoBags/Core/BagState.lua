@@ -69,23 +69,30 @@ function BagState:HeldItem() return self.held and self.held.item or nil end
 -- oscillate), so a hover on the item immediately right of the current phantom keeps the current point.
 function BagState:InsertPoint()
   if not self.held or not self.insertMode then return nil end
-  local c = self.hoverCell
+  -- THE RULE (owner, 2026-11-18): the phantom opens where the mouse is and does NOT move again until
+  -- the mouse enters a cell that names a DIFFERENT target. It is a stored fact (set by
+  -- UpdateInsertPoint), never derived from the current hover on read.
+  return self.insertPoint
+end
+
+-- What a hovered cell targets: the slot it shows (insert before it), or "end" over the lock.
+-- nil for cells outside a section and for the phantom itself.
+local function TargetKeyForCell(c)
   if not c or not c.sectionID then return nil end
+  if c.kind == Layout.CELL_SLOT and c.ref then return c.ref.slotIndex, c.ref end
+  if c.kind == Layout.CELL_DROP then return "end", nil end
+  return nil
+end
+
+-- Move the phantom only if the hovered cell names a different target than the current point.
+local function UpdateInsertPoint(self)
+  local c = self.hoverCell
+  local key, beforeRef = TargetKeyForCell(c)
+  if key == nil then return false end                               -- phantom / off-section: hold
   local cur = self.insertPoint
-  local point
-  if c.kind == Layout.CELL_SLOT and c.ref then
-    if cur and cur.sectionID == c.sectionID and cur.beforeRef == c.ref then
-      point = cur                                              -- same item we already insert before
-    else
-      point = { sectionID = c.sectionID, beforeRef = c.ref }
-    end
-  elseif c.kind == Layout.CELL_INSERT then
-    point = cur or { sectionID = c.sectionID, beforeRef = c.beforeRef }   -- hovering the phantom itself
-  elseif c.kind == Layout.CELL_DROP then
-    point = { sectionID = c.sectionID, beforeRef = nil }     -- lock cell: at the end
-  end
-  self.insertPoint = point
-  return point
+  if cur and cur.sectionID == c.sectionID and cur.key == key then return false end
+  self.insertPoint = { sectionID = c.sectionID, beforeRef = beforeRef, key = key }
+  return true
 end
 
 local function ResetInsertPoint(self)
@@ -137,7 +144,7 @@ end
 function BagState:SetHover(cell)
   if self.hoverCell == cell then return end
   self.hoverCell = cell
-  if self.held and self.insertMode then self:Emit("cursor") end
+  if self.held and self.insertMode and UpdateInsertPoint(self) then self:Emit("cursor") end
 end
 
 -- Same as SetHover but never emits: for the view's post-render re-sync, which must not trigger
@@ -150,7 +157,7 @@ function BagState:SetInsertMode(on)
   on = on and true or false
   if self.insertMode == on then return end
   self.insertMode = on
-  if not on then ResetInsertPoint(self) end
+  if on then UpdateInsertPoint(self) else ResetInsertPoint(self) end   -- open where the mouse already is
   if self.held then self:Emit("cursor") end
 end
 

@@ -392,25 +392,6 @@ function Window.Render()
   end
   for i = ci + 1, #cells do cells[i]:Hide(); cells[i].cell = nil end
 
-  -- Re-sync hover after a re-flow: the mouse has not moved but the cell under it may have changed.
-  -- Do it from the frame actually under the cursor so a stale cell object is never reported.
-  -- SILENT: every render builds new cell tables, so SetHover would always see a "new" cell and emit
-  -- "cursor", which re-renders, which re-syncs... (the infinite loop of 2026-11-18). The controller
-  -- is told about the hover without an event; if the insert point actually moved, we draw once more.
-  if view.bag:HeldItem() and not view.inResync then
-    for _, b in ipairs(cells) do
-      if b:IsShown() and b:IsMouseOver() then
-        view.hoverButton = b
-        local before = view.bag:InsertPoint()
-        view.bag:SetHoverSilent(b.cell)
-        local after = view.bag:InsertPoint()
-        local moved = (before and before.beforeRef) ~= (after and after.beforeRef) or ((before == nil) ~= (after == nil))
-        if moved then view.inResync = true; Window.Render(); view.inResync = false end
-        break
-      end
-    end
-  end
-
   Window.ApplySearch(frame.Search:GetText())
   Carry_Sync()
   if ns.EditMode then ns.EditMode.OnWindowResized(w, h) end
