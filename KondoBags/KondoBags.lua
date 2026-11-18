@@ -110,7 +110,10 @@ local function OnItemLockChanged(bagID, slot)
   end
   liveBag.moveQueue:OnLockChanged(ref and ref.item and ref.item.locked)
   SyncCursor()
-  if source == "live" then ns.Window.Render() end
+  -- NO full render here: a lock fires in the middle of Blizzard's own pickup/drop on the secure
+  -- button under the mouse; re-dressing / re-parenting it mid-gesture cancels the drag. Only the one
+  -- cell's "locked" look changes, in place.
+  if source == "live" and ref then ns.Window.RefreshRef(ref) end
 end
 
 -- The bag the UI (Edit Mode, Options) should act on: whichever is attached, else live.

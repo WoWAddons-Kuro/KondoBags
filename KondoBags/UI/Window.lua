@@ -660,6 +660,20 @@ function Window.ApplySearch(text)
   apply(cells); apply(secureCells)
 end
 
+-- In-place update of the one secure cell showing `ref` (lock state during a Blizzard drag). No
+-- re-parent, no re-anchor, no re-dress: only the desaturation. Anything heavier mid-gesture cancels
+-- the client's own pickup.
+function Window.RefreshRef(ref)
+  if not frame or not frame:IsShown() then return end
+  for _, b in ipairs(secureCells) do
+    if b.cell and b.cell.ref == ref then
+      local item = ref.item
+      SetItemButtonDesaturated(b, item ~= nil and item.locked or false)
+      return
+    end
+  end
+end
+
 -- ---------------------------------------------------------------------------
 -- public
 -- ---------------------------------------------------------------------------
