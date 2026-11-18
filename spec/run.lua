@@ -173,6 +173,25 @@ test("Shift-drag: phantom opens at hover; dropping a LOOSE item there pins it at
   bag:SetInsertMode(false)
 end)
 
+test("Shift-drag over the RIGHTMOST kept item is stable: phantom stays while the shifted item re-hovers", function()
+  -- Opening the phantom before the last item pushes that item one cell right, under the still mouse.
+  -- The view then reports hover on that same item again; the phantom must not jump.
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))
+  bag:SetInsertMode(true)
+  bag:SetHover(Cell(bag, 8))
+  local function phantomBefore()
+    for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
+      if c.kind == L.CELL_INSERT then return c.beforeRef and c.beforeRef.slotIndex end
+    end end
+  end
+  eq(phantomBefore(), 8)
+  bag:SetHover(nil); bag:SetHover(Cell(bag, 8))     -- the re-hover the view produces after the re-flow
+  eq(phantomBefore(), 8, "no oscillation")
+  ok(bag:Drop(Cell(bag, 8)))                         -- dropping on the item (Shift still down) lands at the phantom
+  eq(Picture(bag), "4 3 5 1 0 | 6 7 2 8")
+end)
+
 test("loose onto loose / empty: stock swap and place", function()
   local bag = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 2, 5 }), columns = 6 })
   eq(Picture(bag), "_ _ 2 _ 0 | 5")

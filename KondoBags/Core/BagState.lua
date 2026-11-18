@@ -64,14 +64,32 @@ function BagState:IsHeld(ref) return self.held ~= nil and self.held == ref end
 function BagState:HeldItem() return self.held and self.held.item or nil end
 
 -- Where the Shift-drag phantom goes: before the hovered kept item, or at the end when over the lock.
+-- STICKY: opening the phantom shifts the hovered item one cell right, straight under the still mouse;
+-- the view then reports a hover on that same item. That must not move the phantom again (it would
+-- oscillate), so a hover on the item immediately right of the current phantom keeps the current point.
 function BagState:InsertPoint()
   if not self.held or not self.insertMode then return nil end
   local c = self.hoverCell
   if not c or not c.sectionID then return nil end
-  if c.kind == Layout.CELL_SLOT and c.ref then return { sectionID = c.sectionID, beforeRef = c.ref } end
-  if c.kind == Layout.CELL_INSERT then return { sectionID = c.sectionID, beforeRef = c.beforeRef } end
-  if c.kind == Layout.CELL_DROP then return { sectionID = c.sectionID, beforeRef = nil } end
-  return nil
+  local cur = self.insertPoint
+  local point
+  if c.kind == Layout.CELL_SLOT and c.ref then
+    if cur and cur.sectionID == c.sectionID and cur.beforeRef == c.ref then
+      point = cur                                              -- same item we already insert before
+    else
+      point = { sectionID = c.sectionID, beforeRef = c.ref }
+    end
+  elseif c.kind == Layout.CELL_INSERT then
+    point = cur or { sectionID = c.sectionID, beforeRef = c.beforeRef }   -- hovering the phantom itself
+  elseif c.kind == Layout.CELL_DROP then
+    point = { sectionID = c.sectionID, beforeRef = nil }     -- lock cell: at the end
+  end
+  self.insertPoint = point
+  return point
+end
+
+local function ResetInsertPoint(self)
+  self.insertPoint = nil
 end
 
 function BagState:Layout(columns)
@@ -103,6 +121,7 @@ end
 function BagState:Pickup(ref)
   if not ref or not ref.item then return false end
   self.held = ref
+  ResetInsertPoint(self)
   self:Emit("cursor")
   return true
 end
@@ -110,6 +129,7 @@ end
 function BagState:ClearCursor()
   if not self.held then return false end
   self.held = nil
+  ResetInsertPoint(self)
   self:Emit("cursor")
   return true
 end
@@ -124,6 +144,7 @@ function BagState:SetInsertMode(on)
   on = on and true or false
   if self.insertMode == on then return end
   self.insertMode = on
+  if not on then ResetInsertPoint(self) end
   if self.held then self:Emit("cursor") end
 end
 
@@ -140,7 +161,7 @@ function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
   local heldSec = self:SectionOfRef(held)
-  local function done() self.held = nil; self:Emit("changed"); return true end
+  local function done() self.held = nil; ResetInsertPoint(self); self:Emit("changed"); return true end
 
   -- Section targets: lock cell, Shift phantom, or any section cell while Shift is down.
   local targetSec = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
