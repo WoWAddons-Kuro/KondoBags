@@ -2,22 +2,31 @@
 --
 -- No WoW API. Runs under stock Lua 5.1 (spec/run.lua) and in game alike.
 --
--- POSITIONS ARE VIRTUAL. The general bag is a flat list of PHYSICAL slots 0..N-1 (Blizzard order).
--- Keep is a SET of physical slots, scattered anywhere (store.kept). What the window draws is a list
--- of VISUAL positions:
---   incoming  = FREE general slots first, ascending physical (so the lowest free slot -- where
---               Blizzard loots next -- is the visually top-left cell), then OCCUPIED non-kept slots
---               in physical order. Occupied cells never move; only the free pool re-sorts.
---   groups    = kept slots in each group's `order` (visual order, left to right from the lock).
--- Every gesture is a MAP edit plus at most ONE server operation (D13.2 / D15).
+-- A POSITIONAL map with nullable backing. The general bag is a flat list of PHYSICAL slots 0..N-1
+-- (Blizzard order). Incoming is a list of VISUAL positions; store.map[v] is the physical slot drawn
+-- at position v (v = 1 is the bottom-right anchor; higher v walks left/up), or Sections.ABSENT while
+-- a position's slot has just been taken. Keep is a SET of physical slots (store.kept[phys] = groupID).
+--
+-- Every gesture is ONE primitive followed by ReorderHoles():
+--   a slot in incoming empties          -> ReorderHoles()                      (the position is a hole where it was)
+--   a slot leaves Keep                  -> append a NEW position at the top-left, ReorderHoles()
+--   something goes into Keep from incoming -> map[v] = nil-backing? NO: the slot is REMOVED from map, kept[phys] = g,
+--                                          the position becomes a hole backed by ... see Pin; ReorderHoles()
+--   something goes into Keep from outside  -> take the TOP-LEFT-most hole's slot, kept[slot] = g, map[v] = ABSENT,
+--                                          ReorderHoles()                      (one server op: Pickup into that slot)
+-- ReorderHoles(): (a) delete ABSENT positions, shifting everything top-left of them one step toward
+-- the bottom-right (backing untouched: no leapfrog); (b) re-assign the physical slots behind the HOLES
+-- so that reading from the bottom-right they ASCEND -> the lowest free physical slot is the
+-- bottom-right-most hole, where Blizzard loots next.
 --
 --   KondoBags_SectionStore = { nextID = number,
+--                              map  = { [KondoBags_Position] = KondoBags_SlotIndex | ABSENT },
 --                              kept = { [KondoBags_SlotIndex] = KondoBags_SectionID },
 --                              list = { KondoBags_Group... } }        -- display order, incoming first
---   KondoBags_Group        = { id = KondoBags_SectionID, name = string,
---                              order = { KondoBags_SlotIndex... } }  -- visual order, left to right from the lock
+--   KondoBags_Position     = number, 1-based visual index into incoming (1 = bottom-right)
+--   KondoBags_SlotIndex    = number, 0-based PHYSICAL index into the flat general bag
+--   KondoBags_Group        = { id = KondoBags_SectionID, name = string, order = { KondoBags_SlotIndex... } }
 --   KondoBags_SectionID    = string, "s<n>", never reused
---   KondoBags_SlotIndex    = number, 0-based position in the flat general bag (PHYSICAL)
 --   KondoBags_PinOp        = { place = true, slotIndex = KondoBags_SlotIndex }  -- one PickupContainerItem
 
 local _, ns = ...
@@ -27,109 +36,118 @@ ns.Sections = Sections
 
 Sections.HEARTHSTONE_ID = 6948
 Sections.DEFAULT_KEEP_NAME = "Keep"
+Sections.ABSENT = -1          -- a position whose physical slot was just taken; ReorderHoles deletes it
 
 -- ---------------------------------------------------------------------------
 -- store
 -- ---------------------------------------------------------------------------
 
--- A fresh store: nothing kept, one empty "Keep" group.
 function Sections.NewStore()
-  local store = { nextID = 1, kept = {}, list = {} }
+  local store = { nextID = 1, map = {}, kept = {}, list = {} }
   Sections.Create(store, Sections.DEFAULT_KEEP_NAME)
   return store
 end
 
--- Add an EMPTY group (drawn FIRST, directly under incoming). The + button.
 function Sections.Create(store, name)
   local id = "s" .. store.nextID
   store.nextID = store.nextID + 1
   local group = { id = id, name = name or "", order = {} }
-  table.insert(store.list, 1, group)
+  table.insert(store.list, 1, group)          -- new groups draw FIRST, directly under incoming
   return group
 end
 
 function Sections.Find(store, sectionID)
-  for i, g in ipairs(store.list) do
-    if g.id == sectionID then return g, i end
-  end
+  for i, g in ipairs(store.list) do if g.id == sectionID then return g, i end end
   return nil
 end
 
 function Sections.IsKept(store, slot) return store.kept[slot] ~= nil end
-
--- The group that owns `slot`, or nil for incoming.
-function Sections.GroupOfSlot(store, slot)
-  local id = store.kept[slot]
-  return id and Sections.Find(store, id) or nil
-end
+function Sections.GroupOfSlot(store, slot) local id = store.kept[slot]; return id and Sections.Find(store, id) or nil end
 Sections.SectionOfSlot = Sections.GroupOfSlot
-
 function Sections.ItemCount(group) return #group.order end
 
 local function IndexInOrder(group, slot)
   for i, s in ipairs(group.order) do if s == slot then return i end end
   return nil
 end
-
 local function RemoveSlotFromOrders(store, slot)
-  for _, g in ipairs(store.list) do
-    local i = IndexInOrder(g, slot)
-    if i then table.remove(g.order, i) end
-  end
+  for _, g in ipairs(store.list) do local i = IndexInOrder(g, slot); if i then table.remove(g.order, i) end end
 end
-
--- Where a slot goes in `group.order` to land in the cursor gap anchored to `anchorSlot`: the gap is
--- drawn in the anchor's column and the anchor slides left, so the new entry sits immediately AFTER
--- the anchor; anchorSlot nil = right after the lock = first.
 local function GapIndex(group, anchorSlot)
   local i = anchorSlot and IndexInOrder(group, anchorSlot)
   return i and (i + 1) or 1
 end
-
--- Lowest free general slot (the visually top-left free cell), or nil when the bag is full.
--- `isFree(slot) -> bool` reports occupancy.
-function Sections.LowestFree(store, slotCount, isFree)
-  for s = 0, slotCount - 1 do
-    if not store.kept[s] and isFree(s) then return s end
-  end
+local function PositionOf(store, slot)
+  for v, s in ipairs(store.map) do if s == slot then return v end end
   return nil
 end
 
 -- ---------------------------------------------------------------------------
--- gestures  (each edits the store and returns the ONE server op it needs, or {} for none)
+-- ReorderHoles
+-- ---------------------------------------------------------------------------
+-- `isFree(slot) -> bool` reports physical occupancy. Two passes, see the file header.
+function Sections.ReorderHoles(store, isFree)
+  -- (a) delete ABSENT positions; everything top-left of them (higher v) steps one toward the bottom-right
+  local compact = {}
+  for _, s in ipairs(store.map) do if s ~= Sections.ABSENT then compact[#compact + 1] = s end end
+  store.map = compact
+  -- (b) holes: collect their physical slots, sort ascending, hand them back from the bottom-right up
+  local holePositions, holeSlots = {}, {}
+  for v, s in ipairs(store.map) do
+    if isFree(s) then holePositions[#holePositions + 1] = v; holeSlots[#holeSlots + 1] = s end
+  end
+  table.sort(holeSlots)
+  for i, v in ipairs(holePositions) do store.map[v] = holeSlots[i] end
+end
+
+-- The top-left-most hole (highest v with a free slot), or nil when incoming has no hole.
+function Sections.TopLeftHole(store, isFree)
+  for v = #store.map, 1, -1 do if isFree(store.map[v]) then return v end end
+  return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- gestures  (each returns the ONE server op it needs, or {} for none; nil = cannot)
 -- ---------------------------------------------------------------------------
 
--- Pin the item sitting in general slot `slot` (incoming) into `group` at the gap anchored to
--- `anchorSlot` (nil = right after the lock). ZERO moves: the slot is marked kept; incoming's run
--- closes top-left-down by the map (Partition does that). Returns {} -- the caller may still need ONE
--- Pickup to put a cursor-held item back into `slot`, which is the caller's business, not the model's.
-function Sections.Pin(store, group, slot, anchorSlot)
+-- Pin the item in general slot `slot` (currently incoming) into `group`. ZERO server ops: the slot
+-- moves from the map into kept; its position becomes a hole backed by... nothing yet -- we mark it
+-- ABSENT so ReorderHoles (a) closes the run. (Owner, 2026-11-18: 'when we steal a free slot to put it
+-- in keep, compact the positions left of it'. The same rule applies to a pinned ITEM's position.)
+function Sections.Pin(store, group, slot, anchorSlot, isFree)
   if store.kept[slot] then return nil end
+  local v = PositionOf(store, slot)
+  if v then store.map[v] = Sections.ABSENT end
   store.kept[slot] = group.id
   table.insert(group.order, GapIndex(group, anchorSlot), slot)
+  Sections.ReorderHoles(store, isFree)
   return {}
 end
 
--- Pin an item that is NOT in the general list (external cursor, typed bag): claim the lowest free
--- general slot. Returns { KondoBags_PinOp } (one Pickup into that slot) or nil when the bag is full.
-function Sections.PinFromOutside(store, group, anchorSlot, slotCount, isFree)
-  local h = Sections.LowestFree(store, slotCount, isFree)
-  if h == nil then return nil end
+-- Pin an item that is NOT in the general list (external cursor, typed bag): steal the top-left-most
+-- hole. Returns { KondoBags_PinOp } (one Pickup into its slot), the slot; or nil when there is no hole.
+function Sections.PinFromOutside(store, group, anchorSlot, isFree)
+  local v = Sections.TopLeftHole(store, isFree)
+  if not v then return nil end
+  local h = store.map[v]
+  store.map[v] = Sections.ABSENT
   store.kept[h] = group.id
   table.insert(group.order, GapIndex(group, anchorSlot), h)
+  Sections.ReorderHoles(store, isFree)
   return { { place = true, slotIndex = h } }, h
 end
 
--- Unpin: the kept `slot` leaves Keep. ZERO moves. (The player's drag onto an incoming cell is
--- Blizzard's own swap/place; this is the bookkeeping that follows, or a direct unpin gesture.)
-function Sections.Unpin(store, slot)
+-- A slot leaves Keep (unpin, consume, dissolve): it needs a position -> a NEW one at the far top-left.
+function Sections.Release(store, slot, isFree)
   if not store.kept[slot] then return false end
   store.kept[slot] = nil
   RemoveSlotFromOrders(store, slot)
+  store.map[#store.map + 1] = slot
+  Sections.ReorderHoles(store, isFree)
   return true
 end
+Sections.Unpin = Sections.Release
 
--- Move a kept `slot` into the cursor gap of `group` anchored to `anchorSlot`. Visual only; across groups.
 function Sections.MoveToGap(store, group, slot, anchorSlot)
   if slot == anchorSlot or not store.kept[slot] then return false end
   RemoveSlotFromOrders(store, slot)
@@ -138,7 +156,6 @@ function Sections.MoveToGap(store, group, slot, anchorSlot)
   return true
 end
 
--- Move a kept `slot` to the visual position `otherSlot` occupies (no-Shift drop onto a kept item).
 function Sections.MoveToPositionOf(store, slot, otherSlot)
   if slot == otherSlot then return false end
   local target = Sections.GroupOfSlot(store, otherSlot)
@@ -149,13 +166,15 @@ function Sections.MoveToPositionOf(store, slot, otherSlot)
   return true
 end
 
--- Remove a group: its slots go back to incoming. ZERO moves. Returns true, or false when the group
--- is unknown or is the last one (there must always be at least one).
-function Sections.Dissolve(store, sectionID)
+-- Remove a group: every slot is Released. ZERO server ops. false if unknown or the last group.
+function Sections.Dissolve(store, sectionID, isFree)
   local g, i = Sections.Find(store, sectionID)
   if not g or #store.list < 2 then return false end
-  for _, slot in ipairs(g.order) do store.kept[slot] = nil end
+  local slots = {}
+  for k, s in ipairs(g.order) do slots[k] = s end
   table.remove(store.list, i)
+  for _, s in ipairs(slots) do store.kept[s] = nil; store.map[#store.map + 1] = s end
+  Sections.ReorderHoles(store, isFree)
   return true
 end
 
@@ -163,22 +182,14 @@ end
 -- partition for the layout
 -- ---------------------------------------------------------------------------
 
--- `slots` is { KondoBags_SlotRef... } indexed 1..N (slot index = i-1). Incoming comes out in VISUAL
--- reading order: free slots ascending physical (lowest free = first = top-left), then occupied
--- non-kept slots DESCENDING physical (slot 0 is the bottom-right anchor, like stock). Then every group.
--- `typedSlots` (optional) form ONE run drawn above incoming.
+-- `slots` is { KondoBags_SlotRef... } indexed 1..N (physical = i-1). Incoming comes out in READING
+-- order: position #map (top-left) first down to position 1 (bottom-right). Then every group.
 function Sections.Partition(store, slots, columns, typedSlots)
-  local free, occupied = {}, {}
-  for i = 1, #slots do
-    local ref = slots[i]
-    local s = i - 1
-    if not store.kept[s] then
-      if ref.item == nil then free[#free + 1] = ref else occupied[#occupied + 1] = ref end
-    end
-  end
   local loose = {}
-  for _, ref in ipairs(free) do loose[#loose + 1] = ref end                -- ascending physical
-  for i = #occupied, 1, -1 do loose[#loose + 1] = occupied[i] end          -- descending physical
+  for v = #store.map, 1, -1 do
+    local ref = slots[store.map[v] + 1]
+    if ref then loose[#loose + 1] = ref end
+  end
   local typed = {}
   for i = #(typedSlots or {}), 1, -1 do typed[#typed + 1] = typedSlots[i] end
   local sections = {}
@@ -193,33 +204,49 @@ function Sections.Partition(store, slots, columns, typedSlots)
   return { columns = columns, typed = typed, loose = loose, sections = sections }
 end
 
--- Validate/repair a saved store against the current bag. Enforces: every kept slot in range and
--- OCCUPIED (an emptied kept slot leaves Keep -- D13.1); every kept slot named by exactly one group,
--- in `order` exactly once; >= 1 group. Stores from before D15 (a `boundary`, per-item sets) are replaced.
+-- Validate/repair a saved store against the current bag:
+--   * pre-D15 stores (boundary / per-item sets / no map) -> fresh;
+--   * kept entries that are out of range, EMPTY (D13.1) or name an unknown group are Released;
+--   * every physical slot appears exactly once in map+kept: duplicates/out-of-range dropped from the map,
+--     missing ones appended at the top-left (a bag grew, a slot was never seen);
+--   * every group's order = its kept slots, once each; >= 1 group; then ReorderHoles.
 function Sections.Reconcile(store, slotCount, slots)
-  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" then
-    return Sections.NewStore()
+  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" or type(store.map) ~= "table" then
+    store = Sections.NewStore()
   end
   local function occupied(slot) return not slots or (slots[slot + 1] ~= nil and slots[slot + 1].item ~= nil) end
+  local function isFree(slot) return not occupied(slot) end
   if #store.list == 0 then Sections.Create(store, Sections.DEFAULT_KEEP_NAME) end
-  -- drop kept entries that are out of range, empty, or name a group that no longer exists
+  -- kept: drop bad entries (they will be re-added to the map below as ordinary slots)
   for slot, gid in pairs(store.kept) do
     if type(slot) ~= "number" or slot < 0 or slot >= slotCount or not occupied(slot) or not Sections.Find(store, gid) then
       store.kept[slot] = nil
     end
   end
-  -- every group's order = its kept slots, each exactly once, in the existing order where possible
-  local seen = {}
+  -- map: keep only valid, non-kept, first-seen slots
+  local seen, map = {}, {}
+  for _, s in ipairs(store.map) do
+    if type(s) == "number" and s >= 0 and s < slotCount and not store.kept[s] and not seen[s] then
+      map[#map + 1] = s; seen[s] = true
+    end
+  end
+  for s = 0, slotCount - 1 do
+    if not seen[s] and not store.kept[s] then map[#map + 1] = s; seen[s] = true end   -- new / released: top-left
+  end
+  store.map = map
+  -- orders
+  local inOrder = {}
   for _, g in ipairs(store.list) do
     local order = {}
     for _, slot in ipairs(g.order or {}) do
-      if store.kept[slot] == g.id and not seen[slot] then order[#order + 1] = slot; seen[slot] = true end
+      if store.kept[slot] == g.id and not inOrder[slot] then order[#order + 1] = slot; inOrder[slot] = true end
     end
     g.order = order
   end
   for slot, gid in pairs(store.kept) do
-    if not seen[slot] then local g = Sections.Find(store, gid); g.order[#g.order + 1] = slot; seen[slot] = true end
+    if not inOrder[slot] then local g = Sections.Find(store, gid); g.order[#g.order + 1] = slot end
   end
+  Sections.ReorderHoles(store, isFree)
   return store
 end
 

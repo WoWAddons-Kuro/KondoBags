@@ -213,24 +213,31 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 +------------------------------------------+   +------------------------------------------+
 ```
 
-**The slot model: ONE indirection map, free pool sorted (D15, 2026-11-18).** The bag's general slots `0..N-1` (Blizzard's combined order) are PHYSICAL. What the window draws is a list of VISUAL positions; `KondoBags_SlotMap` says which physical slot each visual position shows. Nothing about Keep is physical: Keep is a SET of physical slots (`store.kept[phys] = groupID`), scattered anywhere in the bag. Four facts drive everything:
+**The slot model: a POSITIONAL map with nullable backing (D15, 2026-11-18).** The bag's general slots `0..N-1` (Blizzard's combined order) are PHYSICAL. Incoming is a list of VISUAL positions, `store.map[v] = phys | nil` -- each position is backed by one physical slot, or by nothing (an **absent** position, transient). Keep is a SET of physical slots (`store.kept[phys] = groupID`), scattered anywhere in the bag; nothing about Keep is positional. Five facts drive everything:
 
 1. **Blizzard loots into the lowest free PHYSICAL slot.** That is the only thing the client decides for us, so it is the only thing the map has to respect.
-2. **Keep never has a free slot.** Keep is a set of pinned ITEMS; an empty cell is not one. The instant a kept slot empties (the food is eaten, the potion drunk) it leaves the set and joins incoming's free pool. Zero moves. Loot can therefore never land "in Keep": by the time Blizzard fills a slot it is already incoming.
-3. **Occupied incoming cells never move.** An occupied physical slot keeps its visual position until its item leaves. Pins, unpins, loot, consumes, sells: none of them shift an occupied incoming cell.
-4. **The FREE POOL is re-sorted on every change.** All free general slots are drawn at the visual top-left end of incoming, in ascending physical order reading from the top-left **towards** the occupied cells, so the **lowest free physical slot is the top-left cell**. Blizzard loots there next, so new loot appears top-left and nothing else moves. Empty cells are indistinguishable, so this re-sort is invisible (Philosophy: no leapfrog). It runs whenever ANY general slot becomes free: a kept slot released, an incoming item consumed, a sale.
+2. **Keep never has a free slot.** Keep is a set of pinned ITEMS; an empty cell is not one. The instant a kept slot empties it leaves `kept` and becomes an incoming position. Zero moves.
+3. **Occupied positions never move.** `map[v]` for an occupied slot is never rewritten while the slot is occupied. Pins, unpins, loot, consumes, sells: none of them move an occupied incoming cell.
+4. **Holes stay where they are.** When the item at position `v` is consumed, `v` is now a HOLE (empty cell) right there: `item item hole item item hole item` becomes `item item hole item item hole hole`. Only the PHYSICAL slots behind the holes are re-assigned (see `ReorderHoles`).
+5. **`ReorderHoles()` runs after every change** and does exactly two things: (a) if any position is **absent** (its physical slot was taken: pinned from outside, or the slot count shrank), delete that position and shift every position top-left of it one step toward the bottom-right -- their physical backing is untouched, so no item leapfrogs, the run just closes by one; (b) collect the physical slots behind all holes and re-assign them so that, reading the holes from the bottom-right (position 0) toward the top-left, their physical indices ASCEND. The lowest free physical slot is therefore always the **bottom-right-most hole**, which is where Blizzard loots next: new loot appears in the bottom-right-most empty cell and nothing else moves. Empties are indistinguishable, so (b) is invisible (Philosophy).
 
 ```
- physical:  0 1 2 3 4 5 6 7 8     items in 0,1,3,5 ; 6,8 kept ; 2,4,7 free
- visual:    incoming  [2][4][7] [5][3][1][0]    <- free pool (2,4,7 ascending from top-left) then occupied, stable
-            keep      [lock][6][8]              <- group.order, any physical slots
- loot lands in physical 2 = the top-left cell. Nothing else moves.
+ positions (reading order, 0 = bottom-right):   v6  v5  v4  v3  v2  v1  v0
+ backing physical / contents:                   [8] [_] [5] [3] [_] [1] [0]      holes at v5 (phys 7) and v2 (phys 2)
+ after ReorderHoles (b): holes ascend from the bottom-right -> v2 gets phys 2, v5 gets phys 7  (already so)
+ item at v4 (phys 5) is eaten:                  [8] [_] [_] [3] [_] [1] [0]      v4 is a hole now; backing {7,5,2} re-sorted
+                                                  v5->7  v4->5  v2->2  : ascending from the bottom-right. Nothing moved.
+ loot lands in phys 2 = v2, the bottom-right-most hole.
 ```
 
 **Invariants (D13, restated under D15).**
 
-1. **Keep never has a free slot** (fact 2). `Reconcile` drops any `kept` entry whose physical slot is empty or out of range; the slot is simply a free incoming slot from then on.
-2. **One server operation per gesture, at most.** Pin from incoming = ZERO moves: the item's physical slot is added to `kept` and its cell LEAVES incoming; the occupied cells that were visually top-left of it each slide one position toward the bottom-right to close the run (a map edit only -- their physical slots are untouched, their relative order is kept, the free pool is unchanged). This is the "shift down" the player sees, at zero server cost. Pin from OUTSIDE the general list (bank, mail, trade, our typed bags) = ONE `PickupContainerItem` into the **lowest free physical slot** (= the visually top-left-most free cell, the one Blizzard would loot into; the pool shrinks by one at that end and nothing else moves), then that slot is added to `kept`. Unpin = Blizzard's own swap/place onto an incoming cell; on the next scan the slot is no longer kept (no move of ours). Dissolve a group = clear its `kept` entries; zero moves. **There is no chain-shift anywhere.**
+1. **Keep never has a free slot** (fact 2). `Reconcile` drops any `kept` entry whose physical slot is empty or out of range; that slot becomes an incoming position.
+2. **One server operation per gesture, at most.** Every gesture is one primitive followed by `ReorderHoles()`:
+   - **a slot in incoming empties** (consumed, sold, swapped out): nothing to do but `ReorderHoles()`; the position is a hole where it was.
+   - **a slot leaves Keep** (unpin by stock drag, consume, dissolve): it needs a position: append a NEW position at the far top-left of incoming (the grid grows by one cell, like the mockup), then `ReorderHoles()`.
+   - **something goes INTO Keep** -- from incoming: its physical slot moves from `map` to `kept`; its position is a hole now; `ReorderHoles()`. ZERO server ops. From OUTSIDE (bank, mail, trade, our typed bags): take the **top-left-most hole** of incoming, ONE `PickupContainerItem` into its physical slot, move that slot to `kept`, mark the position ABSENT, `ReorderHoles()` (which deletes the absent position and closes the run by one). ONE server op; no hole -> the lock cells are hidden (D14).
+   **There is no chain-shift anywhere.**
 3. **Restricted bag types are ONE display-only run ABOVE incoming.** Quiver, ammo, soul, herb, enchanting, mining, keyring, reagent slots are concatenated in bag order into a single run (never one run per kind), drawn above incoming with the same bottom-anchored rule. Each cell carries its `KondoBags_SlotKind`: empty cells show a faded glyph for the kind, every cell a subtle border tint per kind (`KondoBagsDB.kindTint`, default on). They are not in the general flat index and never in `kept`; their items pin like an external cursor (one move into the lowest free general slot). **No Keep for alternate bag types.**
 4. **Bag swaps move nothing.** `kept` and `group.order` are physical indices into the flat list; equipping or rearranging bags re-indexes the list and `Reconcile` re-validates. No item moves.
 

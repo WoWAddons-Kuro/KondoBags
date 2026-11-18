@@ -96,36 +96,43 @@ test("layout: empty group still shows its lock; the cursor gap opens in the ANCH
 end)
 
 -- ---------------------------------------------------------------------------
--- Sections (model, D15): virtual positions, kept set, sorted free pool
+-- Sections (model, D15): positional map with nullable backing; ReorderHoles
 -- ---------------------------------------------------------------------------
-test("partition: free pool first ascending physical (lowest free = top-left), then occupied descending; keep follows order", function()
+-- Reading-order picture of incoming by PHYSICAL index: "_N" = hole backed by N. Position 1 is the
+-- bottom-right (last in the string); the top-left (first) is the highest position.
+test("fresh store: map is identity (physical N-1 top-left ... 0 bottom-right); holes ascend from the bottom-right", function()
   -- physical 0..8: items in 0,1,3,5 ; kept 6,8 ; free 2,4,7
   local bag = B.New({ store = KeepStore({ 6, 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
-  eq(IncomingSlots(bag), "_2 _4 _7 5 3 1 0")
-  eq(Picture(bag), "_ _ _ 5 3 1 0 | 6 8")
+  -- map starts as 0..8 minus kept = {0,1,2,3,4,5,7}; holes at positions of 2,4,7 already ascend from the right
+  eq(IncomingSlots(bag), "_7 5 _4 3 _2 1 0")
+  eq(Picture(bag), "_ 5 _ 3 _ 1 0 | 6 8")
   S.MoveToPositionOf(bag.store, 8, 6)
-  eq(Picture(bag), "_ _ _ 5 3 1 0 | 8 6", "visual reorder, no physical move")
+  eq(Picture(bag), "_ 5 _ 3 _ 1 0 | 8 6", "visual reorder, no physical move")
 end)
 
-test("free pool re-sorts when an item in the MIDDLE of incoming is used up; occupied cells never move", function()
+test("an item in the MIDDLE of incoming is used up: its position becomes a hole RIGHT THERE; hole backing re-sorts", function()
   local bag = B.New({ store = KeepStore({ 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
-  eq(IncomingSlots(bag), "_2 _4 _7 6 5 3 1 0")
-  bag.slots[4].item = nil                                   -- eat the item in physical 3
-  eq(IncomingSlots(bag), "_2 _3 _4 _7 6 5 1 0", "3 joined the pool between 2 and 4; 6 5 1 0 did not move")
+  eq(IncomingSlots(bag), "_7 6 5 _4 3 _2 1 0")
+  bag.slots[6].item = nil                                   -- eat the item in physical 5 (position 6)
+  S.ReorderHoles(bag.store, bag:IsFreeFn())                 -- what a scan does
+  -- holes are now at positions {8,6,5,3} (phys 7,5,4,2 before); re-sorted so reading from the RIGHT they
+  -- ascend: position 3 -> 2, 5 -> 4, 6 -> 5, 8 -> 7. Same set, same cells, occupied 6 3 1 0 untouched.
+  eq(IncomingSlots(bag), "_7 6 _5 _4 3 _2 1 0")
   bag.slots[9].item = nil                                   -- the KEPT item in 8 is eaten
-  bag:SetSlots(bag.slots)                                   -- scan -> Reconcile
+  bag:SetSlots(bag.slots)                                   -- scan -> Reconcile: Release -> new top-left position
   ok(not S.IsKept(bag.store, 8), "an emptied kept slot leaves Keep (D13.1)")
-  eq(IncomingSlots(bag), "_2 _3 _4 _7 _8 6 5 1 0", "8 joined the pool at its sorted place")
+  eq(IncomingSlots(bag), "_8 _7 6 _5 _4 3 _2 1 0", "8 appeared top-left; backing ascends from the right")
 end)
 
-test("reconcile: pre-D15 stores (boundary / per-item sets) are replaced; emptied and unknown kept slots dropped; orders repaired", function()
-  eq(S.Reconcile({ nextID = 2, boundary = 7, list = { { id = "s1", order = { 7 } } } }, 10).kept[7], nil, "boundary store -> fresh")
-  eq(S.Reconcile({ nextID = 2, list = { { id = "s1", items = { [6948] = true } } } }, 10).nextID, 2, "per-item store -> fresh")
-  local st = { nextID = 3, kept = { [7] = "s1", [8] = "s1", [9] = "zz", [12] = "s1" }, list = { { id = "s1", name = "Keep", order = { 8 } } } }
-  local slots = Bag(10, { 7, 9 })                           -- 8 is EMPTY, 12 out of range, 9's group does not exist
+test("reconcile: pre-D15 stores are replaced; emptied / unknown kept slots dropped; missing slots appended top-left", function()
+  ok(S.Reconcile({ nextID = 2, boundary = 7, list = { { id = "s1", order = { 7 } } } }, 10).map ~= nil, "boundary store -> fresh")
+  local st = { nextID = 3, map = { 0, 1, 2, 3, 4, 5, 6 }, kept = { [7] = "s1", [8] = "s1", [9] = "zz", [12] = "s1" },
+               list = { { id = "s1", name = "Keep", order = { 8 } } } }
+  local slots = Bag(10, { 0, 1, 2, 3, 4, 5, 6, 7, 9 })     -- 8 is EMPTY, 12 out of range, 9's group does not exist
   S.Reconcile(st, 10, slots)
   ok(st.kept[7] and not st.kept[8] and not st.kept[9] and not st.kept[12])
   eq(table.concat(st.list[1].order, ","), "7", "order holds exactly the kept slots")
+  eq(table.concat(st.map, ","), "0,1,2,3,4,5,6,8,9", "8 and 9 appended at the top-left (end of map); 8 is a hole")
 end)
 
 test("AddGroup: the new empty group is drawn FIRST, directly under incoming; Keep moves down", function()
@@ -137,14 +144,14 @@ test("AddGroup: the new empty group is drawn FIRST, directly under incoming; Kee
   eq(rows[#rows].sectionID, bag.store.list[2].id)
 end)
 
-test("RemoveGroup: its slots become incoming with ZERO moves; last group cannot go", function()
+test("RemoveGroup: its slots get NEW top-left positions, zero moves; last group cannot go", function()
   local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
   local g2 = bag:AddGroup("Second")
   S.MoveToGap(bag.store, g2, 8, nil)
   eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")
   ok(bag:RemoveGroup(g2.id))
   eq(bag.slots[9].item.itemID, 108, "nothing moved")
-  eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7", "8 is incoming again, drawn in physical order")
+  eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7", "8 appeared at the top-left of incoming")
   eq(#bag.store.list, 1)
   ok(not bag:RemoveGroup(bag.store.list[1].id), "cannot remove the last group")
 end)
@@ -152,7 +159,7 @@ end)
 -- ---------------------------------------------------------------------------
 -- BagState (controller), MOCK path -- the table is the bag
 -- ---------------------------------------------------------------------------
-test("pin loose onto lock: ZERO moves; the slot is marked kept; its cell leaves incoming, occupied cells close ranks", function()
+test("pin loose onto lock: ZERO moves; its position is deleted and the run top-left of it closes by one", function()
   local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   ok(bag:Pickup(bag.slots[3]))                  -- item 2 at physical 2
   ok(bag:Drop(LockCell(bag)))
@@ -161,22 +168,22 @@ test("pin loose onto lock: ZERO moves; the slot is marked kept; its cell leaves 
   ok(S.IsKept(bag.store, 2))
 end)
 
-test("pin with free slots around: the free pool is unchanged; only the pinned cell leaves incoming", function()
+test("pin with holes around: the holes stay where they are; only the pinned position goes", function()
   local bag = B.New({ store = KeepStore({ 8 }), slots = Bag(9, { 0, 1, 3, 5, 8 }), columns = 7 })
-  eq(IncomingSlots(bag), "_2 _4 _6 _7 5 3 1 0")
+  eq(IncomingSlots(bag), "_7 _6 5 _4 3 _2 1 0")
   ok(bag:Pickup(bag.slots[4])); ok(bag:Drop(LockCell(bag)))   -- pin physical 3
-  eq(IncomingSlots(bag), "_2 _4 _6 _7 5 1 0")
-  eq(Picture(bag), "_ _ _ _ 5 1 0 | 3 8")
+  eq(IncomingSlots(bag), "_7 _6 5 _4 _2 1 0", "3's cell is gone; everything left of it stepped right; holes re-sorted")
+  eq(Picture(bag), "_ _ 5 _ _ 1 0 | 3 8")
 end)
 
-test("drop kept onto EMPTY incoming: stock place; the emptied kept slot leaves Keep; zero moves of ours", function()
+test("drop kept onto EMPTY incoming: stock place; the emptied kept slot is Released to a NEW top-left position", function()
   local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  eq(Picture(bag), "_ 5 4 3 1 0 | 6 7 8")
+  eq(Picture(bag), "5 4 3 _ 1 0 | 6 7 8")
   ok(bag:Pickup(bag.slots[8]))                  -- item 7 (kept)
   ok(bag:Drop(Cell(bag, 2)))                    -- onto empty physical 2
   eq(bag.slots[3].item.itemID, 107); ok(bag.slots[8].item == nil)
   ok(not S.IsKept(bag.store, 7), "7 emptied -> left Keep")
-  eq(Picture(bag), "_ 5 4 3 7 1 0 | 6 8", "7 is now a free cell in the pool (top-left), 7's item sits in 2")
+  eq(IncomingSlots(bag), "_7 5 4 3 2 1 0", "7 appeared top-left as a hole; 7's item now in position of 2")
 end)
 
 test("drop kept onto OCCUPIED incoming: stock swap; kept-ness follows the SLOT", function()
@@ -238,11 +245,12 @@ test("Shift-drag over the RIGHTMOST kept item: gap opens at the right wall, item
   eq(st.list[1].order[#st.list[1].order], 2, "pinned item (physical 2) is LAST, i.e. right of 21")
 end)
 
-test("loose onto loose / empty: stock swap and place; free pool re-sorts", function()
+test("loose onto loose / empty: stock place; the vacated cell is a hole where it was; backing re-sorts", function()
   local bag = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 2, 5 }), columns = 6 })
-  eq(Picture(bag), "_ _ _ 2 0 | 5"); eq(IncomingSlots(bag), "_1 _3 _4 2 0")
+  eq(IncomingSlots(bag), "_4 _3 2 _1 0")
   ok(bag:Pickup(bag.slots[1])); ok(bag:Drop(Cell(bag, 3)))          -- item 0 -> empty physical 3
-  eq(IncomingSlots(bag), "_0 _1 _4 3 2", "0 is free now and sorted first; occupied 3 2 descending")
+  -- cells: position of 0 is now a hole, position of 3 is occupied. Holes {4,1,0} re-sorted from the right.
+  eq(IncomingSlots(bag), "_4 3 2 _1 _0")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -263,11 +271,12 @@ test("typed slots: one run above incoming, mixed kinds, do not shift the general
   eq(rows[1].cells[1].slotKind, "quiver"); eq(rows[1].cells[3].slotKind, "herb")
   eq(rows[1].cells[3].ref.item.itemID, 900)
   ok(not rows[2].typed, "incoming follows")
-  -- MOCK: a typed item on the lock pins like an external one (lands in the lowest free general slot)
+  -- MOCK: a typed item on the lock = pin from outside: steals the TOP-LEFT hole (physical 4), one place
   ok(bag:Pickup(bag.typedSlots[1]))
-  ok(bag:Drop(LockCell(bag)), "typed item pins via the lowest free general slot")
-  eq(bag.slots[3].item.itemID, 900, "landed in physical 2 (lowest free)"); ok(S.IsKept(bag.store, 2))
+  ok(bag:Drop(LockCell(bag)), "typed item pins via the top-left hole")
+  eq(bag.slots[5].item.itemID, 900, "landed in physical 4 (the top-left hole)"); ok(S.IsKept(bag.store, 4))
   ok(bag.typedSlots[1].item == nil)
+  eq(Picture(bag), "_ _ 1 0 | 800 5", "incoming lost one cell")
   -- a general item on a typed cell is refused and released
   ok(bag:Pickup(bag.slots[1]))
   ok(not bag:Drop(rows[1].cells[2]), "general item cannot be dropped on a typed cell"); ok(bag.held == nil)

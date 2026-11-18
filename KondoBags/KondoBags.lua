@@ -25,7 +25,7 @@ local function InitDB()
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
   -- Mock store: a fresh one keeps just the mock's hearthstone slot in the default Keep group (D15).
   local store = KondoBagsCharDB.mockSections
-  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" then
+  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" or type(store.map) ~= "table" then
     store = ns.Sections.NewStore()
     store.kept[ns.Mock.HEARTHSTONE_SLOT] = store.list[1].id
     store.list[1].order = { ns.Mock.HEARTHSTONE_SLOT }
