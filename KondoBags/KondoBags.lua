@@ -239,6 +239,36 @@ local function Slash(msg)
     local b = liveBag
     Print("  BagState: held=%s heldFamily=%s HeldFits(herb)=%s | marked cells: %s", b and tostring(b.held) or "-",
       b and tostring(b.heldFamily) or "-", b and tostring(b:HeldFits("herb")) or "-", ns.Window.DebugNoDrop())
+  elseif cmd == "dump" then
+    -- Debug: every occupied slot with what the client APIs say about it (quest info, class, family).
+    -- `/kondo dump <text>` limits to items whose name contains <text>.
+    local filter = rest ~= "" and rest:lower() or nil
+    local P = ns.Client.Active()
+    local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    local shown = 0
+    for _, bag in ipairs(P.BagIDs()) do
+      for slot = 1, P.NumSlots(bag) do
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info and (not filter or ((info.itemName or ""):lower():find(filter, 1, true))) then
+          shown = shown + 1
+          local q = C_Container.GetContainerItemQuestInfo and C_Container.GetContainerItemQuestInfo(bag, slot)
+          local classID, subClassID
+          if getInstant then local _, _, _, _, _, c, s = getInstant(info.hyperlink or info.itemID); classID, subClassID = c, s end
+          local _, _, _, _, _, itemType, itemSubType, _, _, _, _, classID2, _, bindType =
+            (C_Item and C_Item.GetItemInfo or GetItemInfo)(info.hyperlink or info.itemID)
+          Print("[%d:%d] %s id=%s class=%s/%s (%s / %s) bind=%s family=%s | quest: %s",
+            bag, slot, tostring(info.hyperlink or info.itemName), tostring(info.itemID),
+            tostring(classID or classID2), tostring(subClassID), tostring(itemType), tostring(itemSubType),
+            tostring(bindType), tostring(P.ItemFamily(info.hyperlink or info.itemID)),
+            q and string.format("isQuestItem=%s questID=%s isActive=%s", tostring(q.isQuestItem), tostring(q.questID), tostring(q.isActive))
+              or "GetContainerItemQuestInfo -> nil")
+          local ourQ = P.QuestInfo and P.QuestInfo(bag, slot)
+          Print("        provider.QuestInfo -> %s", ourQ and string.format("isQuestItem=%s questID=%s isActive=%s",
+            tostring(ourQ.isQuestItem), tostring(ourQ.questID), tostring(ourQ.isActive)) or "nil")
+        end
+      end
+    end
+    Print("dump: %d item(s)%s", shown, filter and (" matching '" .. rest .. "'") or "")
   elseif cmd == "status" then
     local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")
     local b = EnsureBag()
