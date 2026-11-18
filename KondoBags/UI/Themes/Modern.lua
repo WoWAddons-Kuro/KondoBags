@@ -23,7 +23,7 @@ ns.Theme.Register({
     insets = { left = 1, right = 1, top = 1, bottom = 1 },
   },
   backdropColor = { 0.05, 0.05, 0.05, 0.9 },
-  backdropBorderColor = { 0.25, 0.25, 0.25, 1 },
+  backdropBorderColor = { 0.12, 0.12, 0.12, 1 }   -- one step above the 0.05 panel; 0.25 read as a bright outline,
   portrait = false,
   titleFont = "GameFontNormal",
   slotNormal = nil,
