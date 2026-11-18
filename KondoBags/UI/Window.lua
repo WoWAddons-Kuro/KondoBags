@@ -99,6 +99,9 @@ local function CreateWindow(theme)
   frame.Money = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   frame.Money:SetJustifyH("RIGHT")
 
+  frame.Footer = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+  frame.Footer:Hide()
+
   frame.Grid = CreateFrame("Frame", nil, frame)
   frame.Grid:SetFrameLevel(frame:GetFrameLevel() + 5)
 
@@ -419,8 +422,22 @@ function Window.Render()
   frame.Search:SetPoint("TOPLEFT", frame, "TOPLEFT", f.padLeft + (theme.portrait and 40 or 0), -(f.padTop + 26))
   frame.Search:SetPoint("RIGHT", frame, "RIGHT", -f.padRight - 4, 0)
   frame.Money:ClearAllPoints()
-  frame.Money:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -f.padRight - 2, f.padBottom + 2)
   frame.Money:SetText(FormatMoney(state.money))
+  local bar = theme.footerBar
+  if bar and frame.Footer.SetBackdrop then
+    frame.Footer:SetBackdrop(bar.backdrop)
+    if bar.bgColor then frame.Footer:SetBackdropColor(unpack(bar.bgColor)) end
+    if bar.borderColor then frame.Footer:SetBackdropBorderColor(unpack(bar.borderColor)) end
+    frame.Footer:ClearAllPoints()
+    frame.Footer:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", f.padLeft - bar.insetX, f.padBottom)
+    frame.Footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -f.padRight + bar.insetX, f.padBottom)
+    frame.Footer:SetHeight(bar.height)
+    frame.Footer:Show()
+    frame.Money:SetPoint("RIGHT", frame.Footer, "RIGHT", -6, 0)
+  else
+    frame.Footer:Hide()
+    frame.Money:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -f.padRight - 2, f.padBottom + 2)
+  end
 
   local ci, di = 0, 0
   for r, row in ipairs(layout.rows) do

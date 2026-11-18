@@ -15,8 +15,15 @@ ns.Theme.Register({
   -- PortraitFrameTemplate: Bg starts at y=-21 (below the title bar), border ~6px each side.
   frame = { padLeft = 12, padRight = 12, padTop = 22, padBottom = 8 },
   titleHeight = 30,      -- search row under the title bar
-  footerHeight = 20,     -- money
+  footerHeight = 24,     -- money bar
   backdrop = nil,
+  -- Stock backpack draws the money inside a thin bordered strip across the whole bottom row.
+  footerBar = {
+    backdrop = { bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10,
+                 insets = { left = 2, right = 2, top = 2, bottom = 2 } },
+    bgColor = { 0, 0, 0, 0.35 }, borderColor = { 0.62, 0.45, 0.2, 0.9 },
+    height = 20, insetX = 2,
+  },
   portrait = true,
   titleFont = "GameFontNormal",
   slotNormal = { file = "Interface\\Buttons\\UI-Quickslot2", size = 64, offsetY = -1 },
