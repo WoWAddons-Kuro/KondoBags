@@ -7,7 +7,7 @@
 --     list   = { KondoBags_Section... },  -- display order
 --   }
 --   KondoBags_Section   = { id = KondoBags_SectionID, name = string,
---                           items = { [itemID] = true }, order = { itemID... } }   -- order = pin order, newest LAST
+--                           items = { [itemID] = true }, order = { itemID... } }   -- order = display order from the lock cell, newest FIRST
 --   KondoBags_SectionID = string, "s<n>", never reused
 --
 -- A new character starts with one section, "Keep", holding Hearthstone (SPECS/00). Users can add
@@ -113,7 +113,7 @@ function Sections.Dissolve(store, sectionID)
 end
 
 -- Split a flat slot list (bag order) into a KondoBags_LayoutInput (see Core/Layout.lua).
--- Section slots come out in PIN order (newest last), so a just-dropped item sits right after the
+-- Section slots come out in section.order (newest FIRST), so a just-dropped item sits immediately right of the
 -- lock cell; several stacks of the same itemID keep bag order among themselves.
 function Sections.Partition(store, slots, columns)
   local byID, sections, pending = {}, {}, {}
