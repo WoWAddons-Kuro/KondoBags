@@ -16,214 +16,168 @@ local function eq(a, b, msg)
 end
 local function ok(v, msg) if not v then error(msg or "expected true", 2) end end
 
-local function Ref(bag, slot, itemID)
-  return { bagID = bag, slot = slot, item = itemID and { itemID = itemID, name = "i" .. itemID } or nil }
+-- A flat combined bag: Bag(n, filled) -> n refs, slot i filled with itemID = 100+i when filled[i].
+local function Item(id) return { itemID = id, name = "i" .. id } end
+local function Bag(n, filledSlots)
+  local set = {}
+  for _, s in ipairs(filledSlots or {}) do set[s] = true end
+  local slots = {}
+  for i = 0, n - 1 do slots[#slots + 1] = { bagID = 0, slot = i + 1, item = set[i] and Item(100 + i) or nil } end
+  return slots
+end
+-- Store with one Keep section owning the top `k` slots of an n-slot bag (visual order = ascending).
+local function KeepStore(n, k)
+  local st = S.NewStore(n)
+  st.list[1].boundary = n - k
+  for s = n - k, n - 1 do st.list[1].order[#st.list[1].order + 1] = s end
+  return st
+end
+-- Readable pictures of the layout: incoming itemIDs in reading order / keep itemIDs in reading order.
+local function Picture(bag)
+  local inc, keep = {}, {}
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
+    if c.kind == L.CELL_SLOT then
+      local v = c.ref.item and (c.ref.item.itemID - 100) or "_"
+      if c.sectionID then keep[#keep + 1] = v else inc[#inc + 1] = v end
+    end
+  end end
+  return table.concat(inc, " ") .. " | " .. table.concat(keep, " ")
+end
+local function Cell(bag, slotIndex)
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
+    if c.kind == L.CELL_SLOT and c.ref.slotIndex == slotIndex then return c end
+  end end
+end
+local function LockCell(bag)
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_DROP then return c end end end
 end
 
 -- ---------------------------------------------------------------------------
 -- Layout
 -- ---------------------------------------------------------------------------
-test("layout: incoming run is bottom-anchored, partial row on top right-aligned", function()
-  local loose = { Ref(0, 1, 1), Ref(0, 2, 2), Ref(0, 3, 3), Ref(0, 4), Ref(0, 5), Ref(0, 6), Ref(0, 7) }
-  local r = L.Build({ columns = 4, loose = loose, sections = {} })
+test("layout: runs are bottom-anchored, partial row on top right-aligned", function()
+  local refs = {}
+  for i = 1, 7 do refs[i] = { slotIndex = i - 1, item = Item(i) } end
+  local r = L.Build({ columns = 4, loose = refs, sections = {} })
   eq(#r.rows, 2)
   eq(#r.rows[1].cells, 3, "top partial"); eq(r.rows[1].cells[1].col, 2, "right-aligned")
-  eq(#r.rows[2].cells, 4, "bottom full"); eq(r.rows[2].cells[4].ref.slot, 7)
-  eq(r.rows[1].sectionID, nil)
+  eq(#r.rows[2].cells, 4, "bottom full")
 end)
 
-test("layout: a section is one drop cell then its items, below incoming", function()
-  local sec = { id = "s1", name = "Keep", slots = { Ref(0, 9, 6948) } }
-  local r = L.Build({ columns = 4, loose = { Ref(0, 1) }, sections = { sec } })
-  eq(#r.rows, 2)
-  eq(r.rows[2].sectionID, "s1")
-  eq(#r.rows[2].cells, 2, "drop + hearthstone")
-  eq(r.rows[2].cells[1].kind, L.CELL_DROP); eq(r.rows[2].cells[1].col, 3, "drop sits left of item")
-  eq(r.rows[2].cells[2].kind, L.CELL_SLOT); eq(r.rows[2].cells[2].col, 4, "item bottom-right")
-  eq(r.rows[2].cells[1].sectionID, "s1")
+test("layout: a section is one lock cell then its items, below incoming", function()
+  local hs = { slotIndex = 9, item = Item(6948) }
+  local r = L.Build({ columns = 4, loose = { { slotIndex = 0 } }, sections = { { id = "s1", slots = { hs } } } })
+  eq(#r.rows, 2); eq(r.rows[2].sectionID, "s1")
+  eq(r.rows[2].cells[1].kind, L.CELL_DROP); eq(r.rows[2].cells[1].col, 3)
+  eq(r.rows[2].cells[2].kind, L.CELL_SLOT); eq(r.rows[2].cells[2].col, 4)
 end)
 
-test("layout: empty section still shows its drop cell", function()
+test("layout: empty section still shows its lock cell; Shift insert cell appears at insertAt", function()
   local r = L.Build({ columns = 4, loose = {}, sections = { { id = "s1", slots = {} } } })
-  eq(#r.rows, 1); eq(#r.rows[1].cells, 1); eq(r.rows[1].cells[1].kind, L.CELL_DROP); eq(r.rows[1].cells[1].col, 4)
-end)
-
-test("layout: runs never share a row; sections keep display order", function()
-  local a = { id = "a", slots = { Ref(0, 1, 1) } }
-  local b = { id = "b", slots = { Ref(0, 2, 2) } }
-  local r = L.Build({ columns = 10, loose = { Ref(0, 3) }, sections = { a, b } })
-  eq(#r.rows, 3)
-  eq(r.rows[1].sectionID, nil); eq(r.rows[2].sectionID, "a"); eq(r.rows[3].sectionID, "b")
-  eq(L.RowCount({ loose = { Ref(0, 3) }, sections = { a, b } }, 10), 3)
+  eq(#r.rows[1].cells, 1); eq(r.rows[1].cells[1].kind, L.CELL_DROP)
+  local a, b = { slotIndex = 8, item = Item(1) }, { slotIndex = 9, item = Item(2) }
+  r = L.Build({ columns = 6, loose = {}, sections = { { id = "s1", slots = { a, b } } }, insertAt = { sectionID = "s1", beforeRef = b } })
+  local kinds = {}
+  for _, c in ipairs(r.rows[1].cells) do kinds[#kinds + 1] = c.kind end
+  eq(table.concat(kinds, ","), "drop,slot,insert,slot")
 end)
 
 -- ---------------------------------------------------------------------------
--- Sections (model)
+-- Sections (model, D11)
 -- ---------------------------------------------------------------------------
-test("store: new store has one Keep section holding Hearthstone", function()
-  local st = S.NewStore()
-  eq(#st.list, 1); eq(st.list[1].name, "Keep"); ok(st.list[1].items[S.HEARTHSTONE_ID])
-  eq(S.ItemCount(st.list[1]), 1)
+test("partition: incoming is highest slot first (slot 0 bottom-right); keep follows order", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  eq(Picture(bag), "5 4 3 2 1 0 | 6 7 8")
+  S.MoveBefore(bag.store.list[1], 8, 6)
+  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7", "visual reorder, no physical move")
 end)
 
-test("store: create / pin / unpin / sectionOf", function()
-  local st = S.NewStore()
-  local s1 = st.list[1]
-  local s2 = S.Create(st, 200)
-  eq(s2.id, "s2")
-  ok(S.Pin(st, "s2", S.HEARTHSTONE_ID), "pin moves item")
-  ok(not s1.items[S.HEARTHSTONE_ID] and s2.items[S.HEARTHSTONE_ID])
-  ok(not S.Pin(st, "s2", S.HEARTHSTONE_ID), "re-pin is a no-op")
-  ok(S.Unpin(st, 200)); ok(not S.SectionOf(st, 200))
-  ok(not S.Pin(st, "nope", 1), "unknown section")
-end)
-
-test("store: ids never reused; reorder clamps", function()
-  local st = S.NewStore()
-  S.Create(st, 2); S.Create(st, 3)
-  ok(S.Dissolve(st, "s2")); eq(S.Create(st, 4).id, "s4")
-  ok(S.Reorder(st, "s4", 1)); eq(st.list[1].id, "s4")
-  ok(not S.Reorder(st, "s4", 1)); ok(not S.Reorder(st, "zz", 1))
-end)
-
-test("partition: pinned items leave loose, same itemID twice both go", function()
-  local st = S.NewStore()
-  local slots = { Ref(0, 1, 6948), Ref(0, 2, 5), Ref(0, 3), Ref(1, 1, 6948) }
-  local input = S.Partition(st, slots, 4)
-  eq(#input.sections, 1); eq(#input.sections[1].slots, 2, "both hearthstones")
-  eq(#input.loose, 2, "one item + one empty")
-end)
-
-test("partition: newest pin comes FIRST, right next to the lock cell", function()
-  local st = S.NewStore()                       -- Keep = { 6948 }
-  ok(S.Pin(st, "s1", 2589))                     -- cloth pinned after hearthstone -> order { 2589, 6948 }
-  local slots = { Ref(0, 1, 6948), Ref(0, 2, 2589) }   -- bag order has hearthstone FIRST
-  local input = S.Partition(st, slots, 10)
-  eq(input.sections[1].slots[1].item.itemID, 2589, "newest pin first (next to lock)")
-  eq(input.sections[1].slots[2].item.itemID, 6948, "hearthstone pushed right")
-  -- stores saved before `order` existed get one rebuilt
+test("reconcile: legacy itemID store becomes an empty Keep at the top; bad boundary repaired", function()
   local legacy = { nextID = 2, list = { { id = "s1", name = "Keep", items = { [6948] = true } } } }
-  eq(S.Partition(legacy, slots, 10).sections[1].slots[1].item.itemID, 6948)
+  local st = S.Reconcile(legacy, 10)
+  eq(st.list[1].boundary, 10); eq(#st.list[1].order, 0)
+  local st2 = S.Reconcile({ nextID = 2, list = { { id = "s1", boundary = 7, order = { 7 } } } }, 10)
+  eq(#st2.list[1].order, 3, "order rebuilt to match range 7..9")
 end)
 
 -- ---------------------------------------------------------------------------
--- BagState (controller)
+-- BagState (controller) -- the owner's worked examples
 -- ---------------------------------------------------------------------------
-local function NewState(slots)
-  local st = B.New({ store = S.NewStore(), slots = slots, columns = 4 })
-  local events = {}
-  st:AddListener(function(e) events[#events + 1] = e end)
-  return st, events
-end
-
-test("bagstate: pickup then drop on drop-cell pins; item stays in its slot", function()
-  local cloth = Ref(0, 1, 2589)
-  local st, events = NewState({ cloth, Ref(0, 2), Ref(0, 3, 6948) })
-  ok(st:Pickup(cloth)); ok(st:IsHeld(cloth)); eq(events[#events], "cursor")
-  local lay = st:Layout()
-  local dropCell
-  for _, row in ipairs(lay.rows) do for _, c in ipairs(row.cells) do if c.kind == L.CELL_DROP then dropCell = c end end end
-  ok(dropCell, "keep section has a drop cell")
-  ok(st:Drop(dropCell))
-  ok(not st.held); eq(events[#events], "changed")
-  eq(st:SectionOf(2589).name, "Keep")
-  eq(cloth.bagID, 0); eq(cloth.slot, 1, "physical slot unchanged")
-  eq(#st:Layout().rows, 2, "incoming row + keep row")
+test("drop kept (slot 7) onto EMPTY incoming slot 2: 7->2, lowest keep slot 6 slides into the hole and is released", function()
+  -- Pictures show ITEM ids (item n started in slot n). Owner's example in SLOT terms:
+  --   before 5 4 3 _ 1 0 | 6 7 8   drag slot7 -> slot2   after  6 5 4 3 2 1 0 | 7 8  (slot 6 now incoming)
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  eq(Picture(bag), "5 4 3 _ 1 0 | 6 7 8")
+  ok(bag:Pickup(bag.slots[8]))                  -- slot 7
+  ok(bag:Drop(Cell(bag, 2)))
+  eq(Picture(bag), "_ 5 4 3 7 1 0 | 6 8", "slot 6 released EMPTY at top-left; item 6 slid up into slot 7; nothing else moved")
+  eq(bag.store.list[1].boundary, 7)
+  eq(bag.slots[3].item.itemID, 107, "item 7 physically in slot 2")
+  eq(bag.slots[8].item.itemID, 106, "item 6 physically in slot 7"); ok(bag.slots[7].item == nil, "slot 6 empty")
 end)
 
-test("bagstate: drop on a slot swaps (mock physical move)", function()
-  local a, empty = Ref(0, 1, 10), Ref(0, 2)
-  local st = NewState({ a, empty })
-  st:Pickup(a); ok(st:Drop({ kind = L.CELL_SLOT, ref = empty }))
-  ok(a.item == nil and empty.item and empty.item.itemID == 10)
+test("drop kept onto OCCUPIED incoming: plain swap, the displaced item is now kept in that visual spot", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[8]))                  -- item 7 at slot 7
+  ok(bag:Drop(Cell(bag, 2)))
+  eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
+  eq(bag.store.list[1].boundary, 6, "boundary unchanged")
 end)
 
-test("bagstate: drop with nothing held is ignored; drop on own slot just clears", function()
-  local a = Ref(0, 1, 10)
-  local st = NewState({ a })
-  ok(not st:Drop({ kind = L.CELL_SLOT, ref = a }))
-  st:Pickup(a); ok(st:Drop({ kind = L.CELL_SLOT, ref = a })); ok(a.item.itemID == 10); ok(not st.held)
+test("pin loose onto lock: swap into boundary-1 then grow; new item sits right of the lock", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))                  -- item 2 at slot 2
+  ok(bag:Drop(LockCell(bag)))
+  -- 2<->5 swap, boundary 6->5: incoming (slots 4..0) reads 4 3 5 1 0 ; keep = new(5) first
+  eq(Picture(bag), "4 3 5 1 0 | 2 6 7 8")
+  eq(bag.store.list[1].boundary, 5)
 end)
 
-test("bagstate: pickup of an empty slot fails; SetColumns clamps", function()
-  local st = NewState({ Ref(0, 1) })
-  ok(not st:Pickup(st.slots[1]))
-  ok(st:SetColumns(1)); eq(st.columns, L.MIN_COLUMNS)
-  ok(st:SetColumns(99)); eq(st.columns, 24)
-  ok(not st:SetColumns(24))
+test("pin the item already at boundary-1: zero moves", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[6]))                  -- item 5 at slot 5
+  ok(bag:Drop(LockCell(bag)))
+  eq(Picture(bag), "4 3 2 1 0 | 5 6 7 8")
 end)
 
-test("bagstate: dragging within a section reorders it; item lands where the target was", function()
-  local hs, cloth, apple = Ref(0, 1, 6948), Ref(0, 2, 2589), Ref(0, 3, 4536)
-  local st = NewState({ hs, cloth, apple })
-  S.Pin(st.store, "s1", 2589); S.Pin(st.store, "s1", 4536)   -- order: apple, cloth, hs
-  local function order()
-    local out = {}
-    for _, r in ipairs(st:Layout().rows) do for _, c in ipairs(r.cells) do
-      if c.kind == L.CELL_SLOT and c.sectionID then out[#out + 1] = c.ref.item.itemID end
-    end end
-    return table.concat(out, ",")
-  end
-  eq(order(), "4536,2589,6948")
-  st:Pickup(hs); ok(st:Drop({ kind = L.CELL_SLOT, ref = apple }))
-  eq(order(), "6948,4536,2589", "hearthstone dropped on apple takes apple's place")
-  eq(hs.slot, 1, "no physical move"); eq(apple.slot, 3)
+test("unpin the LOWEST keep slot onto empty incoming: one move, no second swap", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[7]))                  -- item 6 at slot 6 == boundary
+  ok(bag:Drop(Cell(bag, 2)))
+  eq(Picture(bag), "_ 5 4 3 6 1 0 | 7 8", "slot 6 released (empty) at top-left")
 end)
 
-test("bagstate: dragging a kept item onto a loose cell unpins it (and swaps physically)", function()
-  local hs, empty, apple = Ref(0, 1, 6948), Ref(0, 2), Ref(0, 3, 4536)
-  local st = NewState({ hs, empty, apple })
-  local function looseCell(ref) return { kind = L.CELL_SLOT, ref = ref } end          -- no sectionID = loose area
-  -- hearthstone -> empty loose slot: leaves Keep, lands in slot 2
-  st:Pickup(hs); ok(st:Drop(looseCell(empty)))
-  ok(not st:SectionOf(6948), "no longer kept")
-  ok(hs.item == nil and empty.item.itemID == 6948, "moved into slot 2")
-  eq(#st.store.list, 1, "Keep section itself remains (empty, with its lock cell)")
-  -- re-pin via lock, then swap a LOOSE item onto the KEPT one: normal swap, the kept item stays kept
-  st:Pickup(empty); ok(st:Drop({ kind = L.CELL_DROP, sectionID = "s1" }))
-  ok(st:SectionOf(6948))
-  st:Pickup(apple); ok(st:Drop({ kind = L.CELL_SLOT, ref = empty, sectionID = "s1" }))   -- the hs cell, in Keep
-  ok(empty.item.itemID == 4536 and apple.item.itemID == 6948, "physical swap")
-  ok(st:SectionOf(6948) and not st:SectionOf(4536), "pin followed the hearthstone; apple not kept")
+test("loose onto kept (no Shift): stock swap; membership is by slot", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))                  -- item 2
+  ok(bag:Drop(Cell(bag, 7)))                    -- onto item 7 (kept)
+  eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
 end)
 
-test("bagstate: dragging a loose item onto a loose item swaps as before", function()
-  local a, b = Ref(0, 1, 10), Ref(0, 2, 11)
-  local st = NewState({ a, b })
-  st:Pickup(a); ok(st:Drop({ kind = L.CELL_SLOT, ref = b }))
-  ok(a.item.itemID == 11 and b.item.itemID == 10)
-  ok(not st:SectionOf(10) and not st:SectionOf(11))
+test("kept onto kept: visual reorder only", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[9])); ok(bag:Drop(Cell(bag, 6)))
+  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")
+  eq(bag.slots[9].item.itemID, 108, "no physical move")
 end)
 
-test("bagstate: Shift-drag opens a phantom insert cell at the hover and dropping lands there", function()
-  local hs, cloth, apple = Ref(0, 1, 6948), Ref(0, 2, 2589), Ref(0, 3, 4536)
-  local st, events = NewState({ hs, cloth, apple })
-  S.Pin(st.store, "s1", 2589)                        -- Keep order: cloth, hs ; apple is loose
-  local function cellsOf(kind)
-    local out = {}
-    for _, r in ipairs(st:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == kind then out[#out + 1] = c end end end
-    return out
-  end
-  ok(st:Pickup(apple))
-  st:SetInsertMode(true)
-  eq(#cellsOf(L.CELL_INSERT), 0, "no hover yet -> no insert cell")
-  -- hover the hearthstone cell: insert cell opens before it
-  local hsCell
-  for _, c in ipairs(cellsOf(L.CELL_SLOT)) do if c.ref == hs then hsCell = c end end
-  st:SetHover(hsCell)
-  eq(events[#events], "cursor")
-  local ins = cellsOf(L.CELL_INSERT)
-  eq(#ins, 1); ok(ins[1].beforeRef == hs); eq(ins[1].sectionID, "s1")
-  -- hovering the lock cell = insert at the end
-  st:SetHover(cellsOf(L.CELL_DROP)[1])
-  ok(cellsOf(L.CELL_INSERT)[1].beforeRef == nil)
-  -- Shift up: gap closes
-  st:SetInsertMode(false); eq(#cellsOf(L.CELL_INSERT), 0)
-  -- Shift down, hover hs, drop on the phantom: apple lands before hs
-  st:SetInsertMode(true); st:SetHover(hsCell)
-  ok(st:Drop(cellsOf(L.CELL_INSERT)[1]))
-  eq(table.concat(st.store.list[1].order, ","), "2589,4536,6948")
-  ok(not st.held)
+test("Shift-drag: phantom opens at hover; dropping a LOOSE item there pins it at that index", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))                  -- item 2
+  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 8))
+  local ins
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_INSERT then ins = c end end end
+  ok(ins and ins.beforeRef.slotIndex == 8, "phantom before item 8")
+  ok(bag:Drop(ins))
+  eq(Picture(bag), "4 3 5 1 0 | 6 7 2 8")
+  bag:SetInsertMode(false)
+end)
+
+test("loose onto loose / empty: stock swap and place", function()
+  local bag = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 2, 5 }), columns = 6 })
+  eq(Picture(bag), "_ _ 2 _ 0 | 5")
+  ok(bag:Pickup(bag.slots[1])); ok(bag:Drop(Cell(bag, 3)))
+  eq(Picture(bag), "_ 0 2 _ _ | 5")
 end)
 
 -- ---------------------------------------------------------------------------

@@ -306,7 +306,7 @@ Cell_OnEnter = function(b)
   elseif cell.ref and cell.ref.item then
     local it = cell.ref.item
     GameTooltip:SetText(it.name, QualityColor(it.quality))
-    local s = bag:SectionOf(it.itemID)
+    local s = bag:SectionOfRef(cell.ref)
     if s then GameTooltip:AddLine("KondoBags: kept in " .. ((s.name ~= "" and s.name) or s.id), 0.6, 0.8, 1) end
     GameTooltip:AddLine(string.format("bag %d slot %d (mock)", cell.ref.bagID, cell.ref.slot), 0.5, 0.5, 0.5)
   else

@@ -29,11 +29,14 @@ local items = {
 }
 
 -- Which physical slots hold something; everything else is empty.
+-- Hearthstone (items[4]) sits in the LAST slot (bag 1 slot 6 = combined slot 21): under D11 the
+-- Keep section owns the top of the combined bag, so a fresh store's Keep = { slot 21 }.
 local filled = {
-  [0] = { [1] = 1, [2] = 2, [3] = 3, [4] = 4, [5] = 5, [6] = 6, [11] = 7, [12] = 8, [13] = 9, [14] = 10, [15] = 11, [16] = 12 },
-  [1] = { [2] = 13, [5] = 14, [6] = 15 },
+  [0] = { [1] = 1, [2] = 2, [3] = 3, [4] = 5, [5] = 6, [6] = 7, [11] = 8, [12] = 9, [13] = 10, [14] = 11, [15] = 12, [16] = 13 },
+  [1] = { [2] = 14, [5] = 15, [6] = 4 },
 }
 local sizes = { [0] = 16, [1] = 6 }
+Mock.HEARTHSTONE_SLOT = 21   -- 0-based combined index of the hearthstone above
 
 function Mock.Slots()
   local slots = {}
