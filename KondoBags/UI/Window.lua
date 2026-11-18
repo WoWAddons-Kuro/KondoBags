@@ -114,11 +114,15 @@ local function CreateWindow(theme)
   end)
   frame.Search:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
 
-  frame.Money = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  frame.Money:SetJustifyH("RIGHT")
-
+  -- Footer bar and money sit on their own frame that ignores the window's alpha, so a translucent
+  -- panel background never fades the money text or the bar's border.
   frame.Footer = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
+  frame.Footer:SetIgnoreParentAlpha(true)
+  frame.Footer:SetFrameLevel(frame:GetFrameLevel() + 6)
   frame.Footer:Hide()
+
+  frame.Money = frame.Footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  frame.Money:SetJustifyH("RIGHT")
 
   frame.Grid = CreateFrame("Frame", nil, frame)
   frame.Grid:SetFrameLevel(frame:GetFrameLevel() + 5)
@@ -456,7 +460,7 @@ function Window.Render()
   frame.Search:ClearAllPoints()
   frame.Search:SetHeight(searchH)
   frame.Search:SetWidth(searchW)
-  frame.Search:SetPoint("TOPLEFT", frame, "TOPLEFT", f.padLeft + 6, -searchTop)
+  frame.Search:SetPoint("TOP", frame, "TOP", 0, -searchTop)
   frame.Money:ClearAllPoints()
   if theme.moneyFont then frame.Money:SetFontObject(theme.moneyFont) end
   if theme.moneyColor then frame.Money:SetTextColor(unpack(theme.moneyColor)) end
