@@ -521,19 +521,25 @@ local function DressCell(b, cell, theme)
     SetNoDrop(b, refuses, item ~= nil, theme)
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     if cell.slim then
-      -- Slim lock (gutter cell, half width): flat slot colour instead of the round Quickslot ring, and
-      -- the lock glyph keeps its FULL-cell size centred on the slim cell, clipped by the cell edges
-      -- (owner: slim the slot, not the key). SetGlyph anchored it edge-to-edge; re-anchor after.
-      if b.normal then b.normal:Hide() end
-      b.bg:SetColorTexture(unpack(theme.slimLockBg or theme.slotFlat or { 0, 0, 0, 0.35 })); b.bg:Show()
+      -- Slim lock (gutter cell, half width). Owner: slim the BORDER, not the key. The stock Quickslot
+      -- ring is drawn squeezed to the slim cell (the art stretches cleanly enough at 2:1), the flat
+      -- theme's 1px ring already follows the cell; the key glyph keeps its full cell size, centred,
+      -- overhanging the narrow border on both sides -- no clipping.
+      if b.normal and theme.slotNormal then
+        local sn = theme.slotNormal
+        local ratio = sn.size / theme.cell.size                      -- ring art : cell (64 : 37 on classic)
+        b.normal:SetSize(slimW * ratio, sn.size)
+        b.normal:Show()
+      end
       local g = theme.slimDropGlyph or theme.dropGlyph
       SetGlyph(b, g)
       local full = theme.cell.size - 2 * (g.inset or 0)
       b.emptyIcon:ClearAllPoints()
       b.emptyIcon:SetPoint("CENTER"); b.emptyIcon:SetSize(full, full)
-      b:SetClipsChildren(true)
+      b:SetClipsChildren(false)
     else
       b:SetClipsChildren(false)
+      if b.normal and theme.slotNormal then b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size) end
       SetGlyph(b, theme.dropGlyph)
     end
   elseif cell.kind == Layout.CELL_GAP then
