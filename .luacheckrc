@@ -24,6 +24,7 @@ read_globals = {
     "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL",
     "C_Container", "C_Item", "C_AddOns", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
     "SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
+    "NineSliceUtil", "NineSliceLayouts",
     "BackdropTemplateMixin", "Settings", "InterfaceOptions_AddCategory", "MenuUtil",
     "WOW_PROJECT_ID", "WOW_PROJECT_MAINLINE", "WOW_PROJECT_CLASSIC", "WOW_PROJECT_CAMELOT",
     "WOW_PROJECT_CATACLYSM_CLASSIC", "WOW_PROJECT_MISTS_CLASSIC",
