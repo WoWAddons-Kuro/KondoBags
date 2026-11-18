@@ -230,10 +230,25 @@ function BagState:Drop(cell)
       Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)   -- visual reorder; cursor keeps the item
       self.cursorGap = nil; self:Emit("changed"); return true
     end
-    -- Loose item on the cursor -> pin. The cursor has to be EMPTY before the queue swaps slots, so
-    -- put the item back where it came from first (Pickup on its own slot drops it back).
-    self.moveQueue:Push({ { place = true, bagID = held.bagID, slot = held.slot } })
-    PinHeldAtGap(self, held, targetGroup, anchorRef)
+    -- Loose item on the cursor -> pin. The item is ALREADY off its slot (Blizzard picked it up), so
+    -- the chain's first step is half done: PinFromIncoming's moves start with { from = fromSlot, to = e }
+    -- (or { from = e, to = e+1 } when e == fromSlot). We turn the first move into a PLACE of the cursor
+    -- item into `to`, which is exactly what Pickup(to) does with an item on the cursor: drops into an
+    -- empty `to`, or swaps with `to`'s item (which lands on the cursor, and the NEXT place consumes it).
+    -- So the whole chain becomes: place(e), place(e+1), ..., place(boundary-1) -- one Pickup each,
+    -- every displaced item riding the cursor one step down. Zero extra moves, nothing put back.
+    local moves = Sections.PinFromIncoming(self.store, targetGroup, held.slotIndex, anchorSlot, isFree)
+    local ops = {}
+    for i, m in ipairs(moves) do
+      -- move i carries the cursor item from m.from to m.to; the cursor already holds it, so only `to` matters
+      local r = self.slots[m.to + 1]
+      ops[i] = { place = true, bagID = r.bagID, slot = r.slot }
+    end
+    if #ops == 0 then
+      -- already at boundary-1: just drop it back where it was
+      ops[1] = { place = true, bagID = held.bagID, slot = held.slot }
+    end
+    self.moveQueue:Push(ops)
     self.cursorGap = nil; self:Emit("changed"); return true
   end
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end

@@ -378,7 +378,7 @@ test("MoveQueue: one swap in flight at a time; next starts after completion; onD
   q:Abort(); ok(not q:IsBusy())
 end)
 
-test("live Drop on a lock: loose cursor item -> place back + chain-shift through the queue; store updated", function()
+test("live Drop on a lock: cursor item rides the chain as a sequence of PLACE ops; store updated", function()
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   bag.live = true
   local issued = {}
@@ -388,11 +388,13 @@ test("live Drop on a lock: loose cursor item -> place back + chain-shift through
   ok(bag:Drop(LockCell(bag)))
   eq(bag.store.boundary, 5, "store already reflects the pin")
   eq(bag.store.list[1].order[1], 5)
-  eq(issued[1], 3, "first op puts the cursor item back into its own slot (slot index 2 = slot 3)")
-  eq(#issued, 1, "the queue waits for that place to land before the chain-shift starts")
-  bag.moveQueue:OnBagUpdateDelayed()            -- place landed
-  eq(#issued, 3, "first swap of the chain (two Pickups) now in flight")
-  eq(issued[2], 3); eq(issued[3], 4)            -- swap slot index 2 <-> 3 (slots 3 <-> 4): e = 2 since no free slot
+  -- No free slot above index 2, so e = 2: chain is 2<->3, 3<->4, 4<->5. With the item already on the
+  -- cursor each step is ONE Pickup on the destination: place(3), place(4), place(5) (1-based slots).
+  eq(issued[1], 4, "first place: cursor item into slot index 3 (slot 4); its item comes onto the cursor")
+  eq(#issued, 1, "one op in flight at a time")
+  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[2], 5)
+  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[3], 6, "last place lands the chain at boundary-1 (index 5 = slot 6)")
+  bag.moveQueue:OnBagUpdateDelayed(); ok(not bag.moveQueue:IsBusy())
 end)
 
 test("hideLocks: external cursor with no free general slot emits no lock / gap cells", function()

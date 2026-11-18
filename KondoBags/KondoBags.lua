@@ -154,8 +154,14 @@ local dirty = false
 local function OnBagsChanged()
   if not dirty or not liveBag then return end
   -- While our own MoveQueue is mid-chain the bag is half-moved; a Reconcile now would "repair" the
-  -- store against it. Let the queue advance and rescan when it is idle (it calls back via onDone).
-  if liveBag.moveQueue:IsBusy() then liveBag.moveQueue:OnBagUpdateDelayed(); return end
+  -- store against it. Feed the event to the queue (it completes the in-flight swap) and rescan the
+  -- moment the queue drains -- the LAST BAG_UPDATE_DELAYED of a chain arrives while the queue is
+  -- still marked busy, so without this the window never repainted after a pin.
+  if liveBag.moveQueue:IsBusy() then
+    liveBag.moveQueue.onDone = function() dirty = true; OnBagsChanged() end
+    liveBag.moveQueue:OnBagUpdateDelayed()
+    return
+  end
   dirty = false
   liveBag:SetSlots(LiveScan())
   KondoBagsCharDB.sections = liveBag.store
