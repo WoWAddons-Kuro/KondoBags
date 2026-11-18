@@ -1,4 +1,4 @@
-﻿-- KondoBags Core/Layout.lua -- pure Lua. Turns a partitioned bag (loose + sections) into grid cells.
+-- KondoBags Core/Layout.lua -- pure Lua. Turns a partitioned bag (loose + sections) into grid cells.
 --
 -- No WoW API. Runs under stock Lua 5.1 (spec/run.lua) and in game alike. The VIEW (UI/Window.lua)
 -- consumes KondoBags_LayoutResult and nothing else from the model.
