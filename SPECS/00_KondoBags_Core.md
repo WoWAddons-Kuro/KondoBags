@@ -364,15 +364,17 @@ Each phase ends with something usable in play, and nothing is built before the l
 
 ### Phase 0 — UI mockup (M0)
 
-- [ ] Repo skeleton: `.pkgmeta`, `.gitignore`, `.luacheckrc`, LICENSE, README, CHANGELOG, `PROJECT_STRUCTURE.md` entry
-- [ ] `KondoBags/KondoBags.toc` loading on Era and Forever; vendored LibStub + LibEditMode
-- [ ] `Mock/MockSnapshot.lua`: fake sections with real icon paths, counts, a reagent and quiver strip, free counts
-- [ ] `UI/Theme.lua` + `UI/Themes/Flat.lua`: metrics and colours as data
-- [ ] `UI/Window.lua`: renders a plain sections table into headers, cells, free cells, strips, search box (non-secure plain buttons for now)
-- [ ] `UI/EditMode.lua`: window registered with LibEditMode; drag/scale/reset work
-- [ ] `/kondo mock` toggles the mock window; `/kondo status` prints provider/version
+- [x] Repo skeleton: `.pkgmeta`, `.gitignore`, `.luacheckrc`, LICENSE, README, CHANGELOG, `PROJECT_STRUCTURE.md` entry
+- [x] `KondoBags/KondoBags.toc` loading on Era (seen 2026-11-17); vendored LibStub + LibEditMode. Forever: to confirm
+- [x] `Mock/MockSnapshot.lua`: 16-slot backpack + 6-slot bag with real icon paths and counts (no restricted strips in this iteration)
+- [x] `UI/Theme.lua` + `Themes/Classic.lua` + `Themes/Modern.lua`: metrics and colours as data
+- [x] `UI/Window.lua`: stock-look frame, grid, `+` cell, handle cell, divider, mock pickup/drop with carry icon, handle drag reorder, right-click menu, search
+- [x] `UI/EditMode.lua`: placeholder registered with LibEditMode; drag + cell-snapped resize grip. In-game verification pending
+- [x] `/kondo` toggles the mock window; `/kondo status`, `theme`, `columns`, `reset`
+- [ ] Visual sign-off on classic theme (iterating: portrait ring, search row, bg tint, slot icons — 2026-11-17)
+- [ ] Spec hygiene: purge Toss-line remnants (M2 section, settings rows, `tossLineShown`)
 
-Exit criteria: owner looks at it on both clients and signs off on headers, spacing, cell size, colours, Junk dimming, free cells, strips. Screenshots saved to `docs/`.
+Exit criteria: owner looks at it on both clients and signs off on frame art, spacing, cell art, `+`/handle glyphs, divider. Screenshots saved to `docs/`.
 
 ### Phase 1 — Dev loop, bag model, classifier core (M1)
 
