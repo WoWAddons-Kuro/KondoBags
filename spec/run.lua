@@ -153,6 +153,23 @@ test("bagstate: pickup of an empty slot fails; SetColumns clamps", function()
   ok(not st:SetColumns(24))
 end)
 
+test("bagstate: dragging within a section reorders it; item lands where the target was", function()
+  local hs, cloth, apple = Ref(0, 1, 6948), Ref(0, 2, 2589), Ref(0, 3, 4536)
+  local st = NewState({ hs, cloth, apple })
+  S.Pin(st.store, "s1", 2589); S.Pin(st.store, "s1", 4536)   -- order: apple, cloth, hs
+  local function order()
+    local out = {}
+    for _, r in ipairs(st:Layout().rows) do for _, c in ipairs(r.cells) do
+      if c.kind == L.CELL_SLOT and c.sectionID then out[#out + 1] = c.ref.item.itemID end
+    end end
+    return table.concat(out, ",")
+  end
+  eq(order(), "4536,2589,6948")
+  st:Pickup(hs); ok(st:Drop({ kind = L.CELL_SLOT, ref = apple }))
+  eq(order(), "6948,4536,2589", "hearthstone dropped on apple takes apple's place")
+  eq(hs.slot, 1, "no physical move"); eq(apple.slot, 3)
+end)
+
 -- ---------------------------------------------------------------------------
 for _, t in ipairs(tests) do
   local okRun, err = pcall(t.fn)

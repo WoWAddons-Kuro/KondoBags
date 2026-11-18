@@ -103,7 +103,15 @@ function BagState:Drop(cell)
   elseif cell.kind == Layout.CELL_SLOT and cell.ref then
     local target = cell.ref
     if target ~= held then
-      target.item, held.item = held.item, target.item    -- mock physical swap/place
+      local heldSec = Sections.SectionOf(self.store, held.item.itemID)
+      local targetSec = target.item and Sections.SectionOf(self.store, target.item.itemID)
+      if heldSec and heldSec == targetSec then
+        -- both kept in the same section: reorder the row (logical); the held item lands where the
+        -- target was and nothing moves physically
+        Sections.MoveBefore(self.store, held.item.itemID, target.item.itemID)
+      else
+        target.item, held.item = held.item, target.item    -- mock physical swap/place
+      end
     end
     self.held = nil
     self:Emit("changed")

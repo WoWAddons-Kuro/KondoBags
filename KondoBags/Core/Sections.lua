@@ -7,7 +7,7 @@
 --     list   = { KondoBags_Section... },  -- display order
 --   }
 --   KondoBags_Section   = { id = KondoBags_SectionID, name = string,
---                           items = { [itemID] = true }, order = { itemID... } }   -- order = display order from the lock cell, newest FIRST
+--                           items = { [itemID] = true }, order = { itemID... } }   -- order = display order from the lock, newest FIRST
 --   KondoBags_SectionID = string, "s<n>", never reused
 --
 -- A new character starts with one section, "Keep", holding Hearthstone (SPECS/00). Users can add
@@ -87,6 +87,20 @@ function Sections.SectionOf(store, itemID)
     if s.items[itemID] then return s end
   end
   return nil
+end
+
+-- Move `itemID` to the display position of `otherItemID` inside their shared section (the other
+-- item and everything after shift right). Returns true if changed; no-op across sections.
+function Sections.MoveBefore(store, itemID, otherItemID)
+  local s = Sections.SectionOf(store, itemID)
+  if not s or itemID == otherItemID or not s.items[otherItemID] then return false end
+  EnsureOrder(s)
+  RemoveFromOrder(s, itemID)
+  for i, id in ipairs(s.order) do
+    if id == otherItemID then table.insert(s.order, i, itemID); return true end
+  end
+  s.order[#s.order + 1] = itemID   -- unreachable when membership and order agree; keep them consistent
+  return true
 end
 
 function Sections.ItemCount(section)
