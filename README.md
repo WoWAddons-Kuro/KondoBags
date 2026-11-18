@@ -2,21 +2,14 @@
 
 A bag addon for World of Warcraft that organizes your backpack the way a tidy person would, without you writing a single rule.
 
-Five fixed sections, filled automatically:
+The window is the stock bag grid plus **Keep**:
 
-| Section | What lands there |
-|---|---|
-| **Quest** | Items marked as quest items, plus ordinary items a quest in your log is asking for |
-| **Upcoming** | Items a quest you are not on yet will ask for *(late stage)* |
-| **Keep** | Whatever you pin there. Hearthstone starts there. |
-| **Everything else** | The rest |
-| **Junk** | Greys, and anything you pin as junk |
+- **Incoming** — everything you loot, drawn exactly where the stock bag would draw it. New loot opens a new cell; nothing already there moves.
+- **Keep** — one or more named rows at the bottom, each led by a lock cell. Drop an item on a lock to keep it; drag it back up to let it go; Shift-drag to choose its spot. Hearthstone starts there.
 
-The only manual acts are pinning an item to Keep or to Junk. Everything the addon remembers about how you sort is **per character**. Nothing is physically moved between bags; sections are how items are drawn.
+The `+` button adds another Keep row. Everything the addon remembers about how you sort is **per character**.
 
-Also included: the **Toss line** *(working name)* — an always-visible one-liner showing the least valuable droppable stack in your bags. One click deletes it. Quest items, Keep pins and anything above Common quality are never offered.
-
-Position and scale of the window and the Toss line are handled through **Edit Mode**.
+Position, scale and column count of the window are handled through **Edit Mode**.
 
 ## Clients
 

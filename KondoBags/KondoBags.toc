@@ -5,7 +5,7 @@
 ## Interface-Mists: 50500
 ## Interface-Mainline: 120000
 ## Title: KondoBags
-## Notes: Bags that organise themselves into sections. Drag an item onto the + to start one.
+## Notes: The stock bag plus Keep rows. Drop an item on a lock cell to keep it there.
 ## Author: Kuro
 ## Version: @project-version@
 ## SavedVariables: KondoBagsDB
