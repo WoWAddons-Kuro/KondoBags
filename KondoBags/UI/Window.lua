@@ -268,6 +268,9 @@ local function DressCell(b, cell, theme)
     end
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     SetGlyph(b, theme.dropGlyph)
+  elseif cell.kind == Layout.CELL_INSERT then
+    -- Shift-drag phantom target: same lock glyph, brighter, so it reads as "this is where it lands"
+    SetGlyph(b, theme.insertGlyph or theme.dropGlyph)
   end
 end
 
@@ -292,8 +295,9 @@ end
 Cell_OnEnter = function(b)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
+  bag:SetHover(cell)
   GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
-  if cell.kind == Layout.CELL_DROP then
+  if cell.kind == Layout.CELL_DROP or cell.kind == Layout.CELL_INSERT then
     local s = bag:Section(cell.sectionID)
     local n = s and ns.Sections.ItemCount(s) or 0
     GameTooltip:SetText((s and s.name ~= "" and s.name) or "Section", 1, 1, 1)
@@ -311,7 +315,7 @@ Cell_OnEnter = function(b)
   GameTooltip:Show()
 end
 
-Cell_OnLeave = function() GameTooltip:Hide() end
+Cell_OnLeave = function() GameTooltip:Hide(); if view.bag then view.bag:SetHover(nil) end end
 
 -- ---------------------------------------------------------------------------
 -- render
@@ -410,6 +414,17 @@ function Window.Attach(opts)
   if view.bag ~= opts.bag then
     view.bag = opts.bag
     view.bag:AddListener(OnBagEvent)
+    view.bag:SetInsertMode(IsShiftKeyDown())
+  end
+  -- Shift toggles insert mode while carrying (see BagState). One event frame for the window.
+  if not view.modFrame then
+    view.modFrame = CreateFrame("Frame")
+    view.modFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
+    view.modFrame:SetScript("OnEvent", function(_, _, key, down)
+      if key == "LSHIFT" or key == "RSHIFT" then
+        if view.bag then view.bag:SetInsertMode(down == 1 or down == true) end
+      end
+    end)
   end
   view.money = opts.money or view.money
   view.themeID = opts.themeID or view.themeID

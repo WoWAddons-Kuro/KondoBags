@@ -103,6 +103,17 @@ function Sections.MoveBefore(store, itemID, otherItemID)
   return true
 end
 
+-- Move `itemID` to the end of its section's display order. Returns true if changed.
+function Sections.MoveToEnd(store, itemID)
+  local s = Sections.SectionOf(store, itemID)
+  if not s then return false end
+  EnsureOrder(s)
+  if s.order[#s.order] == itemID then return false end
+  RemoveFromOrder(s, itemID)
+  s.order[#s.order + 1] = itemID
+  return true
+end
+
 function Sections.ItemCount(section)
   local n = 0
   for _ in pairs(section.items) do n = n + 1 end

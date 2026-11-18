@@ -22,6 +22,7 @@ ns.Theme.Register({
   slotFlat = { 0, 0, 0, 0.25 },          -- near-transparent interior; the border carries the cell
   slotBorder = { 0.55, 0.55, 0.55, 0.9 }, -- 1px ring, brighter than the panel
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
+  insertGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
   divider = nil,
   junkTint = { 0.5, 0.5, 0.5 },
 })

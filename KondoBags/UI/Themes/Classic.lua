@@ -40,6 +40,7 @@ ns.Theme.Register({
   slotBorder = nil,
   -- Section drop cell: a faded lock icon over the empty-slot art. Drop an item on it to pin it there.
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 7 },
+  insertGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.85, inset = 7 },  -- Shift-drag target
   divider = nil,
   junkTint = { 0.55, 0.55, 0.55 },
 })

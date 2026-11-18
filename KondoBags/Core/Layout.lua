@@ -8,7 +8,9 @@
 --     columns  = number,
 --     loose    = { KondoBags_SlotRef... },                                            -- incoming, bag order
 --     sections = { { id = KondoBags_SectionID, name, slots = { KondoBags_SlotRef... } }... },  -- display order
+--     insertAt = KondoBags_InsertPoint | nil,   -- Shift-drag: where a phantom insert cell opens (see Build)
 --   }
+--   KondoBags_InsertPoint = { sectionID = KondoBags_SectionID, beforeRef = KondoBags_SlotRef | nil }  -- nil = at end
 --   KondoBags_SlotRef = { bagID, slot, item = KondoBags_ItemView | nil }   -- item nil = empty slot
 --
 -- Output:
@@ -29,7 +31,7 @@ ns = ns or {}
 local Layout = {}
 ns.Layout = Layout
 
-Layout.CELL_SLOT, Layout.CELL_DROP = "slot", "drop"
+Layout.CELL_SLOT, Layout.CELL_DROP, Layout.CELL_INSERT = "slot", "drop", "insert"   -- insert: Shift-drag phantom target
 Layout.MIN_COLUMNS = 2
 
 local function LayoutRun(cells, columns, sectionID)
@@ -72,8 +74,20 @@ function Layout.Build(input)
 
   for _, section in ipairs(input.sections or {}) do
     local cells = { { kind = Layout.CELL_DROP, sectionID = section.id } }
+    -- Shift-drag insert mode: open a phantom "insert" cell at input.insertAt so the player can see
+    -- exactly where the held item will land. beforeRef nil = at the end of the section.
+    local ins = input.insertAt
+    local insHere = ins and ins.sectionID == section.id
+    local placed = false
     for _, ref in ipairs(section.slots or {}) do
+      if insHere and not placed and ins.beforeRef == ref then
+        cells[#cells + 1] = { kind = Layout.CELL_INSERT, sectionID = section.id, beforeRef = ref }
+        placed = true
+      end
       cells[#cells + 1] = { kind = Layout.CELL_SLOT, ref = ref, sectionID = section.id }
+    end
+    if insHere and not placed then
+      cells[#cells + 1] = { kind = Layout.CELL_INSERT, sectionID = section.id, beforeRef = nil }
     end
     Append(LayoutRun(cells, columns, section.id))
   end
@@ -82,7 +96,7 @@ function Layout.Build(input)
 end
 
 function Layout.RowCount(input, columns)
-  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections }).rows
+  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections, insertAt = input.insertAt }).rows
 end
 
 return Layout

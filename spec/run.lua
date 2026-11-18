@@ -170,6 +170,37 @@ test("bagstate: dragging within a section reorders it; item lands where the targ
   eq(hs.slot, 1, "no physical move"); eq(apple.slot, 3)
 end)
 
+test("bagstate: Shift-drag opens a phantom insert cell at the hover and dropping lands there", function()
+  local hs, cloth, apple = Ref(0, 1, 6948), Ref(0, 2, 2589), Ref(0, 3, 4536)
+  local st, events = NewState({ hs, cloth, apple })
+  S.Pin(st.store, "s1", 2589)                        -- Keep order: cloth, hs ; apple is loose
+  local function cellsOf(kind)
+    local out = {}
+    for _, r in ipairs(st:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == kind then out[#out + 1] = c end end end
+    return out
+  end
+  ok(st:Pickup(apple))
+  st:SetInsertMode(true)
+  eq(#cellsOf(L.CELL_INSERT), 0, "no hover yet -> no insert cell")
+  -- hover the hearthstone cell: insert cell opens before it
+  local hsCell
+  for _, c in ipairs(cellsOf(L.CELL_SLOT)) do if c.ref == hs then hsCell = c end end
+  st:SetHover(hsCell)
+  eq(events[#events], "cursor")
+  local ins = cellsOf(L.CELL_INSERT)
+  eq(#ins, 1); ok(ins[1].beforeRef == hs); eq(ins[1].sectionID, "s1")
+  -- hovering the lock cell = insert at the end
+  st:SetHover(cellsOf(L.CELL_DROP)[1])
+  ok(cellsOf(L.CELL_INSERT)[1].beforeRef == nil)
+  -- Shift up: gap closes
+  st:SetInsertMode(false); eq(#cellsOf(L.CELL_INSERT), 0)
+  -- Shift down, hover hs, drop on the phantom: apple lands before hs
+  st:SetInsertMode(true); st:SetHover(hsCell)
+  ok(st:Drop(cellsOf(L.CELL_INSERT)[1]))
+  eq(table.concat(st.store.list[1].order, ","), "2589,4536,6948")
+  ok(not st.held)
+end)
+
 -- ---------------------------------------------------------------------------
 for _, t in ipairs(tests) do
   local okRun, err = pcall(t.fn)
