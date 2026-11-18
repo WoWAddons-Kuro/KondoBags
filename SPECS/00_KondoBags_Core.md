@@ -29,7 +29,7 @@ The mental model is **a person who organizes their own backpack**, not a bag aut
 
 - Incoming is drawn in Blizzard's own slot order and is never re-sorted by us; new loot opens a *new* cell at the top-left frontier and nothing already visible moves.
 - Keep positions are an indirection map (`order` lists), so reordering inside Keep is visual only — zero physical moves.
-- When a physical move is unavoidable (a pin needs the top incoming slot; an unpin frees a Keep slot), the algorithm compresses the hole **nearest the blocking items**: the items between that hole and the top each step down one cell, in order, and the shift chain is as short as the free space allows. A freed Keep slot is filled with ONE swap (Keep's own order is visual, so a swap there leapfrogs nothing). Every rule in "Invariants (D13)" and the gesture table is a consequence of this principle; when a new case comes up, choose the move set that disturbs the fewest cells **without changing item order** (a single swap would be fewer cells, but it leapfrogs; it is never the answer).
+- Every gesture costs **at most one server operation** and moves **no occupied cell**. Positions are virtual (D15): pinning marks a slot kept, unpinning unmarks it, and the only thing that ever re-sorts is the pool of EMPTY incoming cells, kept in ascending physical order so Blizzard's next loot lands top-left. Empties are indistinguishable, so that re-sort is invisible. Every rule in "Invariants (D13)" and the gesture table is a consequence of this principle; when a new case comes up, the answer is a map change, not a move.
 
 The design goal is the smallest possible configuration surface and the least adornment. The complete settings list is in "Settings" and is meant to stay that short.
 
@@ -47,9 +47,9 @@ The design goal is the smallest possible configuration surface and the least ado
 | D8 | Libraries are **vendored** (unmodified, with `VENDORED.txt`), not git submodules | `publish.cmd` treats an empty submodule folder as missing and LibEditMode has no CurseForge zip to fall back on. |
 | D9 | **MVC split in code**: `Core/Sections.lua` (model), `Core/Layout.lua` (pure layout), `Core/BagState.lua` (controller: owns store + slots + held item, `Pickup/Drop` decide pin-vs-swap, emits `changed`/`cursor`), `UI/Window.lua` (view only: draws `BagState:Layout()`, forwards gestures). | The view must never mutate the model. Drop semantics are now unit-tested and survive the M4 switch to secure buttons untouched; the mock item source is swapped for the Client provider inside the controller. |
 | D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner. Headers, dividers and handles read as gaudy next to the stock bag. |
-| D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. |
-| D12 | **One physical Keep range, many visual groups.** Physically there are exactly two ranges: incoming (`0 .. boundary-1`) and Keep (`boundary .. N-1`), with ONE boundary and the D11 grow/shrink rule. The UI "sections" below incoming are **groups**: named lists of Keep slots (`{ id, name, order }`) that together partition the Keep range. A `+` button (right of the search box) adds a new empty group. Dropping on group G's lock pins via D11 and records the new slot in `G.order`. When a shrink slides the lowest-slot item into a hole, the slot is renamed in whichever group's `order` held it, so visual membership follows the item. Incoming is always drawn first. | Owner, 2026-11-18. Keeps the loot invariant trivially (one boundary) and makes `+` a pure UI feature. |
-| D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; pinning SHIFTS incoming down (the one unavoidable incoming reshuffle); restricted bag types are extra incoming runs, no Keep for them; bag swaps move nothing because Keep positions are an indirection map. | Owner, 2026-11-18. |
+| D12 | **One Keep set, many visual groups.** Keep is a set of physical slots; the UI "sections" below incoming are **groups**: named lists of kept slots (`{ id, name, order }`) that together partition the set. A `+` button (right of the search box) adds a new empty group. Dropping on group G's lock pins the slot into `kept` and records it in `G.order`. Incoming is always drawn first. | Owner, 2026-11-18. `+` is a pure UI feature. |
+| D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; at most ONE server operation per gesture; restricted bag types are one extra run, no Keep for them; bag swaps move nothing because everything is an indirection map. | Owner, 2026-11-18. |
+| D15 | **Virtual positions over a sorted free pool.** The window draws VISUAL positions through one indirection map; Keep is a scattered SET of physical slots, never a range. Occupied incoming cells never move. All FREE general slots are drawn at incoming's top-left end in ascending physical order, so the lowest free physical slot -- where Blizzard loots next -- is always the top-left cell; this pool is re-sorted on every change (invisible: empties are identical). Pin from incoming = zero moves (mark kept); pin from outside = one `PickupContainerItem` into the lowest free slot; unpin = Blizzard's own swap; dissolve = zero moves. **No chain-shift exists.** | Owner, 2026-11-18. The physical-range model needed `boundary-1-e` chained server moves per pin, each gated by the client on a lock round-trip -- the player had to click once per shifted item. One server operation per gesture is the only thing the client will give us, and this is the only model that achieves it with the UI unchanged. |
 | D14 | **Live cursor model.** Item cells are `ContainerFrameItemButtonTemplate`; **Blizzard owns every slot-to-slot gesture** (pickup, swap, split, use, sell) and we observe the result on `BAG_UPDATE_DELAYED`. We own only the gestures that have no stock meaning: drop on a **lock** / **cursor gap** (pin or reorder) and `+` / remove group. `BagState.held` is a VIEW of `GetCursorInfo()`, not our own state. An **external** cursor item (bank, mail, trade, guild bank: not in our general flat list) dropping on a lock is `PinFromIncoming(fromSlot = nil)`: it needs a free general slot; **when there is none the lock and gap cells are hidden** while that cursor is held. | Owner + assistant, 2026-11-18. Keeps every stock behaviour exactly stock, in and out of combat, and keeps the pin math (D11–D13) untouched. |
 
 ## Architecture
@@ -77,7 +77,7 @@ Three rules hold across the whole design:
 
 1. **Core is pure Lua.** The bag model, section model, controller and layout take plain tables in and return plain tables out, with no WoW API calls. They run under stock Lua 5.1 against a dumped or mocked snapshot.
 2. **Everything is event-driven.** No OnUpdate scanning and no repeating timers. A bag event marks state dirty; one coalesced flush recomputes.
-3. **Sections are physical slot ranges (D11).** Incoming is the low slots in Blizzard's loot order; Keep is the fully occupied high slots. Pin, unpin and dissolve are the only things that move items, exactly as described in the gesture table.
+3. **Positions are virtual (D15).** Incoming is the low slots in Blizzard's loot order; Keep is the fully occupied high slots. Pin, unpin and dissolve are the only things that move items, exactly as described in the gesture table.
 
 ### Repository layout
 
@@ -178,7 +178,7 @@ If a client does not fire `BAG_UPDATE_DELAYED`, the fallback is a single one-sho
 -- pseudocode: illustrative only
 KondoBagsCharDB = {                       -- ## SavedVariablesPerCharacter
   version  = 1,
-  sections = KondoBags_SectionStore,      -- D12: { nextID, boundary, list = { KondoBags_Group... } }; see "Bag window"
+  sections = KondoBags_SectionStore,      -- D15: { nextID, kept = { [phys] = groupID }, list = { KondoBags_Group... } }; see "Bag window"
   window   = { point, x, y, columns },    -- KondoBags_WindowPlacement (+ locked = bool)
   swapOut  = { [gearKey] = true },        -- transient fishing swap-outs (M6)
 }
@@ -213,45 +213,45 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 +------------------------------------------+   +------------------------------------------+
 ```
 
-**Sections are PHYSICAL slot ranges (D11, 2026-11-18).** The bag's slots `0..N` (in Blizzard's combined order) are cut into contiguous ranges, one per section, bottom-up: incoming owns `0 .. boundary-1`, the first section owns `boundary .. boundary2-1`, and so on. Three facts drive everything:
+**The slot model: ONE indirection map, free pool sorted (D15, 2026-11-18).** The bag's general slots `0..N-1` (Blizzard's combined order) are PHYSICAL. What the window draws is a list of VISUAL positions; `KondoBags_SlotMap` says which physical slot each visual position shows. Nothing about Keep is physical: Keep is a SET of physical slots (`store.kept[phys] = groupID`), scattered anywhere in the bag. Four facts drive everything:
 
-1. **Blizzard loots into the lowest free slot.** Incoming's slot order *is* Blizzard's loot order and is never reordered by us.
-2. **Every section slot is always occupied** (a section is exactly as big as its item count), so loot never lands in a section. That means a section's *physical* slot order is irrelevant; its **visual order** is our own `order` list.
-3. **Incoming is drawn with slot `0` bottom-right and higher slots walking left/up** (`N-1 … 1 0` in reading order), bottom-anchored with the partial row on top. New loot therefore appears at the top-left frontier in a *new* cell and **no existing incoming cell moves**. Cells being added or removed at the start of incoming (padding, reclaimed section slots) never shift the others.
-
-```
- incoming (6 wide):   [5][4][3][2][1][0]        0 = anchor, bottom-right
- keep:                [lock][6][7][8]           physical slots 6..8, visual order = order list
-```
-
-**Invariant on shrink.** When a section loses an item, the slot it gives back to incoming **must be its lowest-numbered slot** (`boundary`), because that is where Blizzard loots next and it must become the top of incoming's sequence. Since section slot order is free, this costs at most ONE extra physical swap, never a cascade.
-
-**Invariants (D13).** The slot model in four sentences; everything in the gesture table below follows from these.
-
-1. **Keep never has a free slot.** A section is exactly as large as its item count. Whenever a Keep slot would become free, the item from Keep's **lowest** slot slides into it and that lowest slot is released to incoming (D11 shrink). Loot can therefore never land inside Keep.
-2. **Pinning SHIFTS incoming down from the hole nearest the top; it never swaps.** To land an item from incoming slot `f` in Keep, Keep claims slot `boundary-1`. Let `e` be the **highest** FREE incoming slot above `f` — the free slot closest to the blocking items at the top (or `f` itself if there is none). The item is placed at `e`, then only the items in `e+1 .. boundary-1` step down one slot and the pinned item arrives at `boundary-1`. Everything below `e` never moves; incoming stays in Blizzard's loot order. This is the minimal-movement choice (see Philosophy): the chain is as short as the free space allows. Cost is `boundary-1-e` adjacent moves plus one place (one `PickupContainerItem` pair each in M4); zero if `f == boundary-1`, one if `boundary-1` is free. An item from OUTSIDE the bag (`f` = nil: bank, mail, trade cursor) uses the same rule with `e` = the highest free incoming slot; no free slot means the pin cannot happen, exactly like stock.
-3. **Restricted bag types are ONE display-only run ABOVE incoming.** Quiver, ammo, soul, herb, enchanting, mining, keyring, reagent slots are concatenated in bag order into a single run (never one run per kind: that would stack rows and eat the screen), drawn above incoming with the same bottom-anchored, slot-0-bottom-right rule. Each cell carries its `KondoBags_SlotKind`: empty cells show a faded glyph for the kind, and every cell gets a subtle border tint per kind (`KondoBagsDB.kindTint`, default on). They are **not** in the general flat index, so `boundary`, Keep and every pin rule ignore them; a drop from a typed cell onto a lock, or of anything onto a typed cell, is refused — stock handles those bags. **No Keep for alternate bag types.**
-4. **Bag swaps move nothing.** Keep positions are an **indirection map** (`group.order` lists slot indices; the view resolves them at render). There is no stored mapping from a visual Keep position to a bag/slot pair, so equipping, unequipping or rearranging bags re-indexes the flat slot list and `Reconcile` re-validates the ranges; no items are moved and no visual position changes unless the slot count itself shrank below the Keep range.
+1. **Blizzard loots into the lowest free PHYSICAL slot.** That is the only thing the client decides for us, so it is the only thing the map has to respect.
+2. **Keep never has a free slot.** Keep is a set of pinned ITEMS; an empty cell is not one. The instant a kept slot empties (the food is eaten, the potion drunk) it leaves the set and joins incoming's free pool. Zero moves. Loot can therefore never land "in Keep": by the time Blizzard fills a slot it is already incoming.
+3. **Occupied incoming cells never move.** An occupied physical slot keeps its visual position until its item leaves. Pins, unpins, loot, consumes, sells: none of them shift an occupied incoming cell.
+4. **The FREE POOL is re-sorted on every change.** All free general slots are drawn at the visual top-left end of incoming, in ascending physical order reading from the top-left **towards** the occupied cells, so the **lowest free physical slot is the top-left cell**. Blizzard loots there next, so new loot appears top-left and nothing else moves. Empty cells are indistinguishable, so this re-sort is invisible (Philosophy: no leapfrog). It runs whenever ANY general slot becomes free: a kept slot released, an incoming item consumed, a sale.
 
 ```
- pin item at slot 0, slots 2 and 4 free         unpin kept item at slot 7 onto EMPTY incoming slot 2:
- (boundary 6):
-   before   5 _ 3 _ 1 0 | 6 7 8                  before   5 4 3 _ 1 0 | 6 7 8
-   place    0→4 (e = 4, nearest the top) ; 5→4   move     7→2 ; hole at 7 ; 6→7 ; slot 6 released
-   after    5 3 _ 1 _ | 0 6 7 8   (boundary 5)   after    _ 5 4 3 2 1 0 | 7 8   (boundary 7)
-   (only item 5 moved; items 1 and 3 untouched;   (incoming order preserved; the freed slot is the
-    slot 2 still free, slot 0 now free)            top-left one, where Blizzard loots next)
+ physical:  0 1 2 3 4 5 6 7 8     items in 0,1,3,5 ; 6,8 kept ; 2,4,7 free
+ visual:    incoming  [2][4][7] [5][3][1][0]    <- free pool (2,4,7 ascending from top-left) then occupied, stable
+            keep      [lock][6][8]              <- group.order, any physical slots
+ loot lands in physical 2 = the top-left cell. Nothing else moves.
+```
+
+**Invariants (D13, restated under D15).**
+
+1. **Keep never has a free slot** (fact 2). `Reconcile` drops any `kept` entry whose physical slot is empty or out of range; the slot is simply a free incoming slot from then on.
+2. **One server operation per gesture, at most.** Pin from incoming = ZERO moves: the item's physical slot is added to `kept`; its old visual cell becomes a free cell and re-sorts into the pool. Pin from OUTSIDE the general list (bank, mail, trade, our typed bags) = ONE `PickupContainerItem` into the **lowest free physical slot** (= the top-left cell, where the player can see it land), then that slot is added to `kept`. Unpin = Blizzard's own swap/place onto an incoming cell; on the next scan the slot is no longer kept (no move of ours). Dissolve a group = clear its `kept` entries; zero moves. **There is no chain-shift anywhere.**
+3. **Restricted bag types are ONE display-only run ABOVE incoming.** Quiver, ammo, soul, herb, enchanting, mining, keyring, reagent slots are concatenated in bag order into a single run (never one run per kind), drawn above incoming with the same bottom-anchored rule. Each cell carries its `KondoBags_SlotKind`: empty cells show a faded glyph for the kind, every cell a subtle border tint per kind (`KondoBagsDB.kindTint`, default on). They are not in the general flat index and never in `kept`; their items pin like an external cursor (one move into the lowest free general slot). **No Keep for alternate bag types.**
+4. **Bag swaps move nothing.** `kept` and `group.order` are physical indices into the flat list; equipping or rearranging bags re-indexes the list and `Reconcile` re-validates. No item moves.
+
+```
+ pin item at physical 3 (visual: second occupied cell):         kept item at physical 6 is EATEN:
+   before   free[2 4 7] occ[5 3 1 0] | lock 6 8                    before   free[2 4 7] occ[5 1 0] | lock 6 8
+   kept += {3} ; free pool += {}  (3 was occupied, no new hole)    kept -= {6} ; free pool += {6} -> re-sort
+   after    free[2 4 7] occ[5 1 0] | lock 3 6 8   ZERO moves       after    free[2 4 6 7] occ[5 1 0] | lock 8   ZERO moves
+   (cells for 5, 1, 0 did not move; 3's cell is gone from         (the new free cell slots in between 4 and 7; empties
+    incoming and reappears right of the lock)                       are indistinguishable so nothing visibly jumped)
 ```
 
 Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`): the cell drawn under the mouse while an item is carried with Shift down, anchored to the kept item that was hovered (`anchorRef`; nil = the lock). The gap takes the anchor's column and the anchor slides one cell left, which on a right-aligned row is exactly what puts the gap under a mouse that was over the anchor. It opens where the mouse is and does not move until the mouse enters a cell naming a different anchor.
 
-| Gesture | Physical moves (`PickupContainerItem` pairs in M4; table swaps in the mock) | Visual result |
+| Gesture | Server operations (`PickupContainerItem`; the mock swaps its table) | Visual result |
 |---|---|---|
-| Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
-| Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
-| Drop loose `l` (slot `s_l`) on a section's **lock cell** | `e` = highest free incoming slot above `s_l`, else `s_l`; move `s_l → e` if different; then for `s = e .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order; the hole moves from `e` to `s_l` (D13.2). Zero moves if `s_l == boundary-1`; one move if `boundary-1` is free. |
-| Drop **EXTERNAL** item (cursor from bank / mail / trade; not in our flat list) on a lock or gap | needs a free general slot: `e` = highest free incoming slot; place cursor → `e`; then the same chain-shift to `boundary-1`; `boundary -= 1`; `order` gains it | item lands in the group. **No free slot → the lock and gap cells are hidden** while that cursor is held (`Layout` input `hideLocks`); the drop has nowhere to go, like stock. (D14) |
-| Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
+| Drop kept `k` on **occupied** incoming slot `t` | Blizzard swaps `k ↔ t` (D14). On scan: `k`'s physical slot now holds `t`'s item and is still in `kept`; `t`'s slot holds `k` and is incoming | the kept cell shows the item that was at `t`; `k` sits where `t` was. Stock swap, nothing of ours moved |
+| Drop kept `k` on **empty** incoming slot `t` | Blizzard places `k` into `t`. On scan: `k`'s old slot is empty → leaves `kept` (fact 2), joins the free pool | `k` appears at `t`; its old cell becomes a free cell and re-sorts into the pool. Zero moves of ours |
+| Drop loose `l` (physical `s_l`, on the cursor) on a **lock** or **gap** | ONE `Pickup(s_l)`: puts the item back in its own slot (the cursor must be empty for the map to be truth). `kept[s_l] = group`; `order` gains `s_l` at the gap | `l` appears right of the lock (or at the gap); its incoming cell vanishes and the occupied cells close ranks? **No** -- occupied cells never move: the cell `l` left is now a FREE cell and joins the pool at the top-left end. |
+| Drop **EXTERNAL** or **TYPED** item (not in the general list) on a lock or gap | needs a free general slot: `h` = lowest free physical slot; ONE `Pickup(h)` places the cursor item; `kept[h] = group` | item lands in the group. **No free slot → the lock and gap cells are hidden** while that cursor is held (`Layout` input `hideLocks`). (D14) |
+| Drop kept `k` on kept `j` | none | reorder: `k` takes `j`'s position in `order` (any group) |
 | **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
 | Loose on loose / empty | stock swap/place | stock |
 | Hover the lock cell | — | tooltip: section name, count, "drop an item here to keep it" |
@@ -373,9 +373,10 @@ can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we ow
 **Step 4 — Pins live**
 
 - [ ] `BagState.held` becomes a view of `GetCursorInfo()`: `SetCursor(ref | "external" | nil)` on `CURSOR_CHANGED` / `ITEM_LOCK_CHANGED`; `Pickup`/`ClearCursor` and the mock carry icon go
-- [ ] `Core/MoveQueue.lua` (pure Lua, tested): `ApplyMoves` issues one `Pickup(a); Pickup(b)` pair at a time, waits for `ITEM_LOCK_CHANGED` / `BAG_UPDATE_DELAYED` before the next, aborts if the cursor is lost
-- [ ] `Reconcile` returns follow-up moves: a Keep slot emptied by a stock drag is refilled from Keep's lowest slot and that slot released (D13.1)
-- [ ] external cursor (D14): `PinFromIncoming(nil)` when a general slot is free; `Layout` input `hideLocks` when none
+- [ ] **D15 store**: `Sections` holds `kept = { [phys] = groupID }` (no `boundary`); `Partition` emits incoming as the FREE POOL (free general slots ascending physical) followed by occupied slots in physical order, then the groups; `Reconcile` drops `kept` entries whose slot is empty / out of range and claims none
+- [ ] **D15 gestures**: pin from incoming = `kept[s] = group` + ONE `Pickup(s)` to put the cursor item back (zero net moves); pin from outside = ONE `Pickup(lowestFree)` + `kept[lowestFree] = group`; unpin / dissolve = bookkeeping only. `Core/MoveQueue.lua` shrinks to a single-op issuer (kept for the one-Pickup case and its lock wait)
+- [ ] store changes are committed only when the (single) op has landed, so the view never shows the pre-move bag against the post-move store
+- [ ] external cursor (D14): `Layout` input `hideLocks` when no general slot is free
 - [ ] Shift-insert: `PreClick` on the secure button + `ClearCursor()` to pre-empt the template when `IsShiftKeyDown()` and an item is held — **verify in game**; if it cannot pre-empt, M4 ships with "drop on lock = front, kept-on-kept = reorder" and Shift-insert waits
 - Milestone: pin, unpin, reorder, `+` / remove group on real items; Keep survives `/reload`
 
@@ -386,7 +387,7 @@ can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we ow
 
 Exit criteria (whole phase): right-click use, drag, split-stack, vendor sell and trade all work from the window, in and out of combat; pins survive reload; an external item pins when a slot is free and has nowhere to land when none is.
 
-Tests added in `spec/run.lua`: Mock provider → `Scan.Refs` (typed/general split, flat index = bag order); `MoveQueue` sequencing / lock-wait / abort; `Reconcile` follow-up moves for an externally emptied Keep slot; `hideLocks` emits no `CELL_DROP`/`CELL_GAP`.
+Tests added in `spec/run.lua`: Mock provider → `Scan.Refs` (typed/general split, flat index = bag order); free-pool ordering (lowest free physical = top-left) after a release, a consume and a pin; pin from incoming = zero moves and the vacated cell joins the pool; pin from outside = one op into the lowest free slot; `Reconcile` drops an emptied kept slot; `hideLocks` emits no `CELL_DROP`/`CELL_GAP`.
 
 ### Phase 5 — Themes (M5) · Phase 6 — Keep special cases (M6) · Phase 7 — Late stage (M7)
 

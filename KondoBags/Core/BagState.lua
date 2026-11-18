@@ -203,6 +203,35 @@ local function PinHeldAtGap(self, held, group, anchorRef)
   self:ApplyMoves(moves)
 end
 
+-- LIVE: the store must change WITH the physical bag, not before. PinFromIncoming et al. mutate the
+-- store synchronously (right for the mock, where ApplyMoves swaps the table in the same call). Live,
+-- the moves take frames; a store that already says "boundary-1 is kept" drawn against a bag where
+-- boundary-1 still holds the BLOCKER shows the blocker as the kept item, and a mid-chain Reconcile
+-- believes it. So live gestures run on a COPY, the old store keeps drawing, and the copy is committed
+-- from the queue's onDone (which also triggers the rescan). Owner found this, 2026-11-18.
+local function CopyStore(store)
+  local c = { nextID = store.nextID, boundary = store.boundary, list = {} }
+  for i, g in ipairs(store.list) do
+    local o = {}
+    for k, s in ipairs(g.order) do o[k] = s end
+    c.list[i] = { id = g.id, name = g.name, order = o }
+  end
+  return c
+end
+
+-- Run `fn(storeCopy)` which returns the op list for the queue; push it and commit the copy when the
+-- queue drains. Zero ops = commit now (pure bookkeeping, e.g. a visual reorder).
+local function LiveGesture(self, fn)
+  local copy = CopyStore(self.store)
+  local ops = fn(copy)
+  if ops == nil then return false end
+  local function commit() self.store = copy; self.onStoreCommitted = self.onStoreCommitted and self.onStoreCommitted(copy) end
+  if #ops == 0 then commit(); self.cursorGap = nil; self:Emit("changed"); return true end
+  self.pendingStore = copy
+  self.moveQueue:Push(ops, function() self.pendingStore = nil; commit() end)
+  self.cursorGap = nil; self:Emit("changed"); return true
+end
+
 -- Drop the held item on a layout cell. Returns true if the drop was consumed.
 function BagState:Drop(cell)
   local held = self.held
@@ -211,49 +240,41 @@ function BagState:Drop(cell)
   -- (bank, mail) pins through PinFromIncoming(nil) when a general slot is free; the view hides the
   -- lock cells when none is, so a nil result here means "nothing to do".
   if self.live then
-    local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
-    if not targetGroup or (cell.kind ~= Layout.CELL_DROP and cell.kind ~= Layout.CELL_GAP) then return false end
+    local targetGroupID = cell.sectionID
+    if not targetGroupID or (cell.kind ~= Layout.CELL_DROP and cell.kind ~= Layout.CELL_GAP) then return false end
     local anchorRef = cell.kind == Layout.CELL_GAP and cell.anchorRef or nil
     local anchorSlot = anchorRef and anchorRef.slotIndex or nil
     local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
-    -- An item that is NOT in the general flat list -- an external cursor (bank, mail, trade) or one
-    -- of our own TYPED slots (herb bag, quiver...) -- pins the same way: it needs a free general slot
-    -- `e` to land in, then the chain-shift carries it to boundary-1. PinFromIncoming(nil) picks e.
-    local fromOutside = held == "external" or (held.kind ~= nil and held.kind ~= "general")
-    if fromOutside then
-      local moves, e = Sections.PinFromIncoming(self.store, targetGroup, nil, anchorSlot, isFree)
-      if not moves then return false end
-      -- The item is already on the cursor, so like the loose-pin case every step is one PLACE on the
-      -- destination: first into the hole e, then each chain destination up to boundary-1.
-      local ops = { { place = true, bagID = self.slots[e + 1].bagID, slot = self.slots[e + 1].slot } }
-      for _, m in ipairs(moves) do local r = self.slots[m.to + 1]; ops[#ops + 1] = { place = true, bagID = r.bagID, slot = r.slot } end
-      self.moveQueue:Push(ops)
-      self.cursorGap = nil; self:Emit("changed"); return true
-    end
-    if Sections.IsKept(self.store, held.slotIndex) then
-      Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)   -- visual reorder; cursor keeps the item
-      self.cursorGap = nil; self:Emit("changed"); return true
-    end
-    -- Loose item on the cursor -> pin. The item is ALREADY off its slot (Blizzard picked it up), so
-    -- the chain's first step is half done: PinFromIncoming's moves start with { from = fromSlot, to = e }
-    -- (or { from = e, to = e+1 } when e == fromSlot). We turn the first move into a PLACE of the cursor
-    -- item into `to`, which is exactly what Pickup(to) does with an item on the cursor: drops into an
-    -- empty `to`, or swaps with `to`'s item (which lands on the cursor, and the NEXT place consumes it).
-    -- So the whole chain becomes: place(e), place(e+1), ..., place(boundary-1) -- one Pickup each,
-    -- every displaced item riding the cursor one step down. Zero extra moves, nothing put back.
-    local moves = Sections.PinFromIncoming(self.store, targetGroup, held.slotIndex, anchorSlot, isFree)
-    local ops = {}
-    for i, m in ipairs(moves) do
-      -- move i carries the cursor item from m.from to m.to; the cursor already holds it, so only `to` matters
-      local r = self.slots[m.to + 1]
-      ops[i] = { place = true, bagID = r.bagID, slot = r.slot }
-    end
-    if #ops == 0 then
-      -- already at boundary-1: just drop it back where it was
-      ops[1] = { place = true, bagID = held.bagID, slot = held.slot }
-    end
-    self.moveQueue:Push(ops)
-    self.cursorGap = nil; self:Emit("changed"); return true
+    local function place(slotIndex) local r = self.slots[slotIndex + 1]; return { place = true, bagID = r.bagID, slot = r.slot } end
+    -- Every live gesture runs on a store COPY (see LiveGesture): the old store keeps drawing until the
+    -- physical moves have landed, so the blocker at boundary-1 is never shown as the kept item.
+    return LiveGesture(self, function(store)
+      local group = Sections.Find(store, targetGroupID)
+      if not group then return nil end
+      -- Not in the general flat list: an external cursor (bank, mail, trade) or one of our TYPED
+      -- slots (herb bag, quiver). Needs a free general slot e to land in, then the chain to boundary-1.
+      local fromOutside = held == "external" or (held.kind ~= nil and held.kind ~= "general")
+      if fromOutside then
+        local moves, e = Sections.PinFromIncoming(store, group, nil, anchorSlot, isFree)
+        if not moves then return nil end
+        local ops = { place(e) }
+        for _, m in ipairs(moves) do ops[#ops + 1] = place(m.to) end
+        return ops
+      end
+      if Sections.IsKept(store, held.slotIndex) then
+        -- kept -> lock/gap: visual reorder only; the item stays on the cursor for the player to drop
+        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)
+        return {}
+      end
+      -- Loose item on the cursor -> pin. The item is already OFF its slot (Blizzard picked it up), so
+      -- each chain move { from, to } is one PLACE on `to`: it drops the cursor item there and picks up
+      -- the displaced one, which the next place consumes. e..boundary-1, one Pickup each.
+      local moves = Sections.PinFromIncoming(store, group, held.slotIndex, anchorSlot, isFree)
+      local ops = {}
+      for _, m in ipairs(moves) do ops[#ops + 1] = place(m.to) end
+      if #ops == 0 then ops[1] = { place = true, bagID = held.bagID, slot = held.slot } end   -- already at boundary-1
+      return ops
+    end)
   end
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
   local function refuse() self.held = nil; CloseCursorGap(self); self:Emit("cursor"); return false end

@@ -46,28 +46,30 @@ function MoveQueue:Step()
   end
   local m = table.remove(self.pending, 1)
   self.inFlight = m
+  self.unlocks = 0
   if m.place then
     -- Cursor already holds an item: ONE Pickup on the target drops it there (empty target) or
-    -- swaps it with the target's item (which then sits on the cursor; the next op must consume it).
+    -- swaps it with the target's item (which then sits on the cursor; the next op consumes it).
+    -- ONE slot is touched, so ONE unlock completes it.
+    self.needUnlocks = 1
     self.provider.Pickup(m.bagID, m.slot)
     return
   end
+  self.needUnlocks = 2
   local ab, as = self.resolve(m.from)
   local bb, bs = self.resolve(m.to)
   self.provider.Pickup(ab, as)
   self.provider.Pickup(bb, bs)
 end
 
--- Feed ITEM_LOCK_CHANGED(bag, slot) here. When the in-flight swap's slots are both unlocked
--- (the client reports each unlock), the swap has landed and the next one may go.
+-- Feed ITEM_LOCK_CHANGED here with the slot's NEW lock state. The in-flight op completes when every
+-- slot it touched has reported an UNLOCK: one for a place, two for a swap. Requiring two for a place
+-- stalled the chain until the player's next click produced another lock event (owner, 2026-11-18).
 function MoveQueue:OnLockChanged(isLocked)
   if not self.inFlight then return end
   if isLocked == nil or isLocked == false then
     self.unlocks = (self.unlocks or 0) + 1
-    -- a swap locks 2 slots (or 1 for a move into an empty slot); the second unlock, or the first
-    -- when the target was empty, means done. We cannot tell which cheaply, so also accept
-    -- BAG_UPDATE_DELAYED as completion (OnBagUpdateDelayed).
-    if self.unlocks >= 2 then self:Complete() end
+    if self.unlocks >= (self.needUnlocks or 2) then self:Complete() end
   end
 end
 
