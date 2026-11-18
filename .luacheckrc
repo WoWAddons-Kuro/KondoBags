@@ -32,7 +32,7 @@ read_globals = {
     -- stock bag replacement (UI/StockBags.lua)
     "NUM_CONTAINER_FRAMES", "ContainerFrameContainer", "ContainerFrameCombinedBags", "ToggleBackpack_Combined",
     "ContainerFrame_AllowedToOpenBags", "IsOptionFrameOpen", "CanOpenPanels", "C_CVar", "debugstack",
-    "TEXTURE_ITEM_QUEST_BANG", "TEXTURE_ITEM_QUEST_BORDER",
+    "TEXTURE_ITEM_QUEST_BANG", "TEXTURE_ITEM_QUEST_BORDER", "GetInventoryItemTexture",
     "ITEM_QUALITY_COLORS", "GameFontHighlight", "GameFontNormal", "GameFontHighlightSmall",
     "NumberFontNormal", "ChatFontNormal", "STANDARD_TEXT_FONT",
     "LibStub",

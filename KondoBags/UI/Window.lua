@@ -329,6 +329,25 @@ local function SetGlyph(b, g)
   b.emptyIcon:Show()
 end
 
+-- Glyph for an EMPTY cell. General slots: theme.slotEmptyIcon. Typed slots: theme.kindGlyph[kind].
+-- Ammo kinds (quiver / ammo pouch) follow KondoBagsDB.ammoGlyph:
+--   "pouch" (default) -- the icon of the quiver / pouch actually equipped (ref.bagIcon, from the provider),
+--                         so an empty cell reads "this is my quiver"; falls back to the kind glyph
+--   "ammo"            -- the kind glyph (Blizzard's paperdoll ammo-slot art), bag-agnostic
+local function EmptyGlyph(cell, theme)
+  local kind = cell.slotKind
+  if not kind then return theme.slotEmptyIcon end
+  local g = theme.kindGlyph and theme.kindGlyph[kind]
+  if (kind == "quiver" or kind == "ammo") and (KondoBagsDB == nil or KondoBagsDB.ammoGlyph ~= "ammo") then
+    local icon = cell.ref and cell.ref.bagIcon
+    if icon then
+      local base = theme.bagIconGlyph or g or {}
+      return { file = icon, desaturate = base.desaturate, alpha = base.alpha or 0.4, inset = base.inset or 2, tint = base.tint }
+    end
+  end
+  return g or theme.slotEmptyIcon
+end
+
 -- Quest item highlight on a secure cell (SPECS/01 "Quest item highlight"). Stock's rule verbatim:
 -- "!" when the item STARTS a quest not yet accepted (questID and not isActive), the yellow border
 -- when it is a quest item or belongs to an active quest, nothing otherwise. Era's stock bags hide
@@ -451,10 +470,7 @@ local function DressCell(b, cell, theme)
     -- Empty slot: the template leaves its icon region shown with no file; hide it so the glyph reads.
     if b.icon then b.icon:SetShown(item ~= nil) end
     if not item then
-      local g = cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind]
-      if g and KondoBagsDB and KondoBagsDB.ammoGlyph == "ammo" then g = theme.kindGlyph[cell.slotKind .. "Ammo"] or g end
-      g = g or theme.slotEmptyIcon
-      if g then SetGlyph(b, g) end
+      SetGlyph(b, EmptyGlyph(cell, theme))
     end
     return
   end
@@ -467,14 +483,8 @@ local function DressCell(b, cell, theme)
       if item.quality and item.quality >= 2 then b.qborder:SetVertexColor(QualityColor(item.quality)); b.qborder:Show() end
       if (item.count or 1) > 1 then b.count:SetText(item.count); b.count:Show() end
       if view.bag:IsHeld(cell.ref) then b:SetAlpha(0.4) end   -- "picked up"
-    elseif cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind] then
-      -- Ammo backdrops: KondoBagsDB.ammoGlyph "pouch" (Blizzard's slot art, default) or "ammo"
-      -- (projectile icons); themes carry both as <kind> and <kind>Ammo.
-      local g = theme.kindGlyph[cell.slotKind]
-      if KondoBagsDB and KondoBagsDB.ammoGlyph == "ammo" then g = theme.kindGlyph[cell.slotKind .. "Ammo"] or g end
-      SetGlyph(b, g)
-    elseif theme.slotEmptyIcon then
-      SetGlyph(b, theme.slotEmptyIcon)
+    else
+      SetGlyph(b, EmptyGlyph(cell, theme))
     end
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     SetGlyph(b, theme.dropGlyph)

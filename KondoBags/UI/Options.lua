@@ -140,8 +140,8 @@ local function CreateOptions()
     ammoRadios[#ammoRadios + 1] = r
     return bt:Add(r, 16, -6, 4)
   end
-  AmmoRadio("pouch", "Empty quiver / ammo pouch slots show Blizzard's pouch art")
-  AmmoRadio("ammo", "Empty quiver / ammo pouch slots show an arrow / bullet icon")
+  AmmoRadio("pouch", "Empty quiver / ammo pouch slots show the equipped bag's own icon")
+  AmmoRadio("ammo", "Empty quiver / ammo pouch slots show Blizzard's generic ammo-slot art")
   bt:Finish()
   local lastSection = bt
 

@@ -18,7 +18,7 @@ local function InitDB()
   KondoBagsDB.version = KondoBagsDB.version or DB_VERSION
   KondoBagsDB.theme = KondoBagsDB.theme or "classic"
   if KondoBagsDB.kindTint == nil then KondoBagsDB.kindTint = true end   -- border tint on restricted-bag cells
-  KondoBagsDB.ammoGlyph = KondoBagsDB.ammoGlyph or "pouch"               -- "pouch" (Blizzard slot art) | "ammo" (projectile icons)
+  KondoBagsDB.ammoGlyph = KondoBagsDB.ammoGlyph or "pouch"               -- "pouch" (equipped bag's icon) | "ammo" (Blizzard ammo-slot art)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
   KondoBagsCharDB.mockSections = nil                                      -- M0 mockup store, retired (SPECS/01 R5)

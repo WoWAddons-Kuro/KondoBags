@@ -30,6 +30,13 @@ function P.BagKind(bag)
   return Client.KindFromFamily(family)
 end
 
+-- Icon of the equipped bag itself (for empty-cell backdrops of typed bags); nil for the backpack / keyring.
+function P.BagIcon(bag)
+  if bag <= 0 or not C_Container.ContainerIDToInventoryID then return nil end
+  local inv = C_Container.ContainerIDToInventoryID(bag)
+  return inv and GetInventoryItemTexture("player", inv) or nil
+end
+
 function P.SlotInfo(bag, slot)
   local info = C_Container.GetContainerItemInfo(bag, slot)
   if not info then return nil end
