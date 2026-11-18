@@ -320,6 +320,9 @@ local function NewCell(i)
 end
 
 local function SetGlyph(b, g)
+  -- No glyph for this cell under this theme (modern defines no slotEmptyIcon: empty cells stay flat).
+  -- Callers pass EmptyGlyph()'s result straight in, so nil must be a legal "draw nothing" here.
+  if not g then b.emptyIcon:Hide(); return end
   b.emptyIcon:SetTexture(g.file)
   b.emptyIcon:SetDesaturated(g.desaturate and true or false)
   b.emptyIcon:SetAlpha(g.alpha or 0.5)
