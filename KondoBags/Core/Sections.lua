@@ -6,7 +6,8 @@
 --     nextID = number,
 --     list   = { KondoBags_Section... },  -- display order
 --   }
---   KondoBags_Section   = { id = KondoBags_SectionID, name = string, items = { [itemID] = true }, order = { itemID... } }   -- order = pin order, newest LAST
+--   KondoBags_Section   = { id = KondoBags_SectionID, name = string,
+--                           items = { [itemID] = true }, order = { itemID... } }   -- order = pin order, newest LAST
 --   KondoBags_SectionID = string, "s<n>", never reused
 --
 -- A new character starts with one section, "Keep", holding Hearthstone (SPECS/00). Users can add
