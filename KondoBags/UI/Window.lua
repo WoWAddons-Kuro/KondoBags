@@ -484,7 +484,7 @@ function Window.Render()
   local ci, di = 0, 0
   for r, row in ipairs(layout.rows) do
     local y = -((r - 1) * theme.cell.pitchY)
-    if row.dividerAbove then
+    if row.dividerAbove and theme.divider then
       di = di + 1
       local d = GetDivider(di)
       d:SetColorTexture(unpack(theme.divider.color))

@@ -5,6 +5,7 @@
 -- Input:
 --   KondoBags_LayoutInput = {
 --     columns  = number,                         -- cells per row
+--     showHandles = bool,                        -- append a handle cell to each section (off while we iterate)
 --     sections = { KondoBags_Section... },       -- display order; each { id, name, slots = { KondoBags_SlotRef... } }
 --     loose    = { KondoBags_SlotRef... },       -- everything not in a section, in bag order
 --   }
@@ -80,7 +81,9 @@ function Sections.Layout(input)
     for _, ref in ipairs(section.slots or {}) do
       cells[#cells + 1] = { kind = CELL_SLOT, ref = ref, sectionID = section.id }
     end
-    cells[#cells + 1] = { kind = CELL_HANDLE, sectionID = section.id }
+    if input.showHandles then
+      cells[#cells + 1] = { kind = CELL_HANDLE, sectionID = section.id }
+    end
     Append(LayoutRun(cells, columns, section.id, not first))
     first = false
   end

@@ -40,6 +40,6 @@ ns.Theme.Register({
   slotBorder = nil,
   plusGlyph = { text = "+", font = "GameFontNormalLarge", color = { 1, 0.82, 0, 0.55 } },
   handleGlyph = { text = "\226\137\161", font = "GameFontNormalLarge", color = { 1, 0.82, 0, 0.55 } },  -- U+2261
-  divider = { height = 1, color = { 1, 0.82, 0, 0.35 }, insetX = 4 },
+  divider = nil   -- no line between sections; the row break alone separates them,
   junkTint = { 0.55, 0.55, 0.55 },
 })

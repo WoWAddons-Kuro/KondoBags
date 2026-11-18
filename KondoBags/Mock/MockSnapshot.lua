@@ -23,7 +23,7 @@ local items = {
   { itemID = 7005,  name = "Skinning Knife",         icon = I .. "INV_Weapon_ShortBlade_01", count = 1, quality = 1 },
   { itemID = 818,   name = "Tigerseye",              icon = I .. "INV_Misc_Gem_Variety_01", count = 15, quality = 1 },
   { itemID = 6265,  name = "Soul Shard",             icon = I .. "INV_Misc_Gem_Amethyst_02", count = 1, quality = 1 },
-  { itemID = 6948,  name = "Hearthstone",            icon = I .. "INV_Misc_Rune_01",       count = 1,  quality = 1 },  -- dup id: same item twice
+  { itemID = 4540,  name = "Tough Hunk of Bread",     icon = I .. "INV_Misc_Food_11",       count = 4,  quality = 1 },
   { itemID = 3300,  name = "Rabbit's Foot",          icon = I .. "INV_Misc_MonsterScales_05", count = 2, quality = 0 },
   { itemID = 3304,  name = "Broken Fang",            icon = I .. "INV_Misc_MonsterFang_01", count = 3, quality = 0 },
 }
