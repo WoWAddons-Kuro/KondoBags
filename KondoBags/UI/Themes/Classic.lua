@@ -11,11 +11,15 @@ local _, ns = ...
 ns.Theme.Register({
   id = "classic",
   frameTemplate = "PortraitFrameTemplate",   -- Blizzard frame; backdrop fields below are ignored when set
+  portraitScale = 0.7,                         -- stock 62px circle is too big for a bag; ~30% smaller
+  bgTint = { 0.8, 0.8, 0.8, 0.8 },             -- PortraitFrame Bg: 20% darker, 20% more transparent than stock
   cell = { size = 37, pitchX = 42, pitchY = 41 },
   -- PortraitFrameTemplate: Bg starts at y=-21 (below the title bar), border ~6px each side.
   frame = { padLeft = 12, padRight = 12, padTop = 22, padBottom = 8 },
   titleHeight = 30,      -- search row under the title bar
   footerHeight = 24,     -- money bar
+  moneyFont = "GameFontNormal",                -- ~10% larger than Small, full brightness (white via SetTextColor)
+  moneyColor = { 1, 1, 1 },
   backdrop = nil,
   -- Stock backpack draws the money inside a thin bordered strip across the whole bottom row.
   footerBar = {
@@ -27,6 +31,8 @@ ns.Theme.Register({
   portrait = true,
   titleFont = "GameFontNormal",
   slotNormal = { file = "Interface\\Buttons\\UI-Quickslot2", size = 64, offsetY = -1 },
+  -- Stock bags show a desaturated bag icon inside each empty slot; for now the same icon as the portrait.
+  slotEmptyIcon = { file = "Interface\\Icons\\INV_Misc_Bag_08", desaturate = true, alpha = 0.45, inset = 2 },
   slotFlat = nil,
   slotBorder = nil,
   plusGlyph = { text = "+", font = "GameFontNormalLarge", color = { 1, 0.82, 0, 0.55 } },

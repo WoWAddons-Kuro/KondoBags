@@ -69,6 +69,20 @@ local function CreateWindow(theme)
     frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
     if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
     elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
+    if frame.Portrait and theme.portraitScale then
+      -- Template: 62px at TOPLEFT (-5, 7). Shrink about the same top-left corner so it stays outset.
+      local size = 62 * theme.portraitScale
+      frame.Portrait:SetSize(size, size)
+      frame.Portrait:ClearAllPoints()
+      frame.Portrait:SetPoint("TOPLEFT", frame.PortraitContainer, "TOPLEFT", -5 + (62 - size) * 0.35, 7 - (62 - size) * 0.35)
+      local mask = frame.PortraitContainer.CircleMask
+      if mask then
+        mask:ClearAllPoints()
+        mask:SetPoint("TOPLEFT", frame.Portrait, "TOPLEFT", 2 * theme.portraitScale, 0)
+        mask:SetPoint("BOTTOMRIGHT", frame.Portrait, "BOTTOMRIGHT", -2 * theme.portraitScale, 4 * theme.portraitScale)
+      end
+    end
+    if frame.Bg and theme.bgTint then frame.Bg:SetVertexColor(unpack(theme.bgTint)) end
     frame.Title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
     if frame.SetTitle then frame:SetTitle("KondoBags") elseif frame.Title then frame.Title:SetText("KondoBags") end
     frame.Close = frame.CloseButton
@@ -90,6 +104,7 @@ local function CreateWindow(theme)
   frame.Search = CreateFrame("EditBox", "KondoBagsSearchBox", frame, "SearchBoxTemplate")
   frame.Search:SetHeight(20)
   frame.Search:SetAutoFocus(false)
+  frame.Search:SetFrameLevel(frame:GetFrameLevel() + 10)   -- above the grid and any template children
   frame.Search:SetScript("OnTextChanged", function(self)
     if self.Instructions then self.Instructions:SetShown(self:GetText() == "") end
     Window.ApplySearch(self:GetText())
@@ -153,6 +168,9 @@ local function NewCell(i)
   b.edges[4]:SetPoint("TOPRIGHT", 1, 1);     b.edges[4]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[4]:SetWidth(1)
   b.normal = b:CreateTexture(nil, "BACKGROUND", nil, -1) -- classic Quickslot2 art
   b.normal:SetPoint("CENTER", 0, -1)
+  b.emptyIcon = b:CreateTexture(nil, "BACKGROUND", nil, 1) -- classic: faint bag icon in empty slots
+  b.emptyIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+  b.emptyIcon:Hide()
   b.icon = b:CreateTexture(nil, "ARTWORK")
   b.icon:SetAllPoints()
   b.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
@@ -194,6 +212,7 @@ local function DressCell(b, cell, theme)
   end
 
   b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.glyph:Hide(); b.dim:Hide()
+  b.emptyIcon:Hide()
   b:SetAlpha(1)
   if cell.kind == Sections.CELL_SLOT then
     local item = cell.ref and cell.ref.item
@@ -202,6 +221,13 @@ local function DressCell(b, cell, theme)
       if item.quality and item.quality >= 2 then b.qborder:SetVertexColor(QualityColor(item.quality)); b.qborder:Show() end
       if (item.count or 1) > 1 then b.count:SetText(item.count); b.count:Show() end
       if state.cursor and state.cursor.ref == cell.ref then b:SetAlpha(0.4) end   -- "picked up"
+    elseif theme.slotEmptyIcon then
+      local e = theme.slotEmptyIcon
+      b.emptyIcon:SetTexture(e.file)
+      b.emptyIcon:SetDesaturated(e.desaturate and true or false)
+      b.emptyIcon:SetAlpha(e.alpha or 0.5)
+      b.emptyIcon:SetPoint("TOPLEFT", e.inset or 0, -(e.inset or 0)); b.emptyIcon:SetPoint("BOTTOMRIGHT", -(e.inset or 0), e.inset or 0)
+      b.emptyIcon:Show()
     end
   elseif cell.kind == Sections.CELL_PLUS then
     local g = theme.plusGlyph
@@ -414,14 +440,20 @@ function Window.Render()
   frame:SetSize(w, h)
 
   local f = theme.frame
+  -- Vertical stack under the title bar: [padTop] search row [searchGap] grid ... footer [padBottom].
+  local searchH = theme.searchHeight or 20
+  local searchTop = f.padTop + (theme.titleHeight - searchH) / 2
   frame.Grid:ClearAllPoints()
   frame.Grid:SetPoint("TOPLEFT", f.padLeft, -(f.padTop + theme.titleHeight))
   frame.Grid:SetSize(w - f.padLeft - f.padRight, rows * theme.cell.pitchY)
 
   frame.Search:ClearAllPoints()
-  frame.Search:SetPoint("TOPLEFT", frame, "TOPLEFT", f.padLeft + (theme.portrait and 40 or 0), -(f.padTop + 26))
-  frame.Search:SetPoint("RIGHT", frame, "RIGHT", -f.padRight - 4, 0)
+  frame.Search:SetHeight(searchH)
+  frame.Search:SetPoint("TOPLEFT", frame, "TOPLEFT", f.padLeft + 6, -searchTop)
+  frame.Search:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -f.padRight - 2, -searchTop)
   frame.Money:ClearAllPoints()
+  if theme.moneyFont then frame.Money:SetFontObject(theme.moneyFont) end
+  if theme.moneyColor then frame.Money:SetTextColor(unpack(theme.moneyColor)) end
   frame.Money:SetText(FormatMoney(state.money))
   local bar = theme.footerBar
   if bar and frame.Footer.SetBackdrop then
