@@ -25,11 +25,11 @@ The mental model is **a person who organizes their own backpack**, not a bag aut
 
 ## Philosophy: visual stability — minimise item movement
 
-**Everything in KondoBags is designed around moving as few items as possible, so the picture stays stable.** A cell the player has learnt the position of should still be there next time they open the bag. Concretely:
+**Everything in KondoBags is designed around moving as few items as possible, so the picture stays stable.** A cell the player has learnt the position of should still be there next time they open the bag. The one-line rule: **we never leapfrog items visually; when we need to move slots, we compress holes.** An item only ever steps into an adjacent hole, so the reading order of incoming is preserved and no item ever jumps past another. Concretely:
 
 - Incoming is drawn in Blizzard's own slot order and is never re-sorted by us; new loot opens a *new* cell at the top-left frontier and nothing already visible moves.
 - Keep positions are an indirection map (`order` lists), so reordering inside Keep is visual only — zero physical moves.
-- When a physical move is unavoidable (a pin needs the top incoming slot; an unpin frees a Keep slot), the algorithm picks the variant that touches the **fewest cells**: free slots are consumed before occupied ones, a hole nearest the blocking item is used so the shift chain is as short as possible, and a freed Keep slot is filled with ONE swap, never a cascade. Every rule in "Invariants (D13)" and the gesture table is a consequence of this principle; when a new case comes up, choose the move set that disturbs the fewest cells.
+- When a physical move is unavoidable (a pin needs the top incoming slot; an unpin frees a Keep slot), the algorithm compresses the hole **nearest the blocking items**: the items between that hole and the top each step down one cell, in order, and the shift chain is as short as the free space allows. A freed Keep slot is filled with ONE swap (Keep's own order is visual, so a swap there leapfrogs nothing). Every rule in "Invariants (D13)" and the gesture table is a consequence of this principle; when a new case comes up, choose the move set that compresses a hole and disturbs the fewest cells.
 
 The design goal is the smallest possible configuration surface and the least adornment. The complete settings list is in "Settings" and is meant to stay that short.
 
