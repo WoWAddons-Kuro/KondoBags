@@ -159,15 +159,14 @@ function BagState:SetInsertMode(on)
   if self.held then self:Emit("cursor") end
 end
 
-
--- grows by taking slot boundary-1; the item is swapped there if it is not there already (D11).
-
--- keep range grows by taking slot boundary-1; one swap brings the item there unless already there.
 -- Pin a LOOSE held item into `group` at the cursor gap anchored to `anchorRef` (nil = right after
--- the lock). Physical (D11): keep grows by taking slot boundary-1; one swap brings the item there.
+-- the lock). Physical (D11/D13.2): keep grows by taking slot boundary-1; the item is shifted up
+-- through the nearest free incoming slot above it, so only the items between that hole and the
+-- top of incoming step down one.
 local function PinHeldAtGap(self, held, group, anchorRef)
   local anchorSlot = anchorRef and anchorRef.slotIndex or nil
-  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, anchorSlot)
+  local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
+  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, anchorSlot, isFree)
   self:ApplyMoves(moves)
 end
 

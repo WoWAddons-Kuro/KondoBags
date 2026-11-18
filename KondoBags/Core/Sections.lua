@@ -112,22 +112,45 @@ end
 -- Pin the item at incoming `fromSlot` into `group`, landing in the cursor gap anchored to
 -- `anchorSlot` (nil = right after the lock). Keep grows by taking slot boundary-1; one swap brings
 -- the item there unless it is there already.
-function Sections.PinFromIncoming(store, group, fromSlot, anchorSlot)
-  -- Pin the item at incoming `fromSlot` into `group`, landing in the cursor gap anchored to
-  -- `anchorSlot` (nil = right after the lock). Keep grows by taking slot boundary-1. The item is
-  -- carried there by a SHIFT, not a swap: every incoming item above it steps down one slot
-  -- (fromSlot+1 -> fromSlot, ..., boundary-1 -> boundary-2), so incoming stays contiguous and in
-  -- Blizzard's loot order (owner, 2026-11-18; a swap would drop the displaced item mid-incoming).
-  -- Expressed as a chain of adjacent swaps, each carrying the pinned item one slot up.
-  local moves = {}
+-- Pin an item into `group`, landing in the cursor gap anchored to `anchorSlot` (nil = right after
+-- the lock). Keep grows by taking slot boundary-1.
+--
+--   fromSlot  = the incoming slot the item is in, or nil for an item from OUTSIDE the bag (cursor
+--               item from bank/mail/trade; M4). isFree(slot) -> bool reports incoming occupancy.
+--
+-- The item is carried up by a SHIFT, not a swap, so incoming keeps Blizzard's loot order: pick the
+-- hole `e` = the lowest FREE incoming slot above fromSlot (fromSlot itself when there is none; the
+-- lowest free slot anywhere when fromSlot is nil). Place the item at `e`, then chain adjacent swaps
+-- e<->e+1 ... boundary-2<->boundary-1, each carrying it one slot up and the displaced item one down.
+-- Items strictly between fromSlot and `e` never move. Returns the moves and `e`; nil when an
+-- external item has no free slot to land in. For fromSlot == nil the caller must put the item into
+-- slot `e` before applying the moves.
+function Sections.PinFromIncoming(store, group, fromSlot, anchorSlot, isFree)
   local target = store.boundary - 1
-  for s = fromSlot, target - 1 do
+  local e
+  if fromSlot ~= nil then
+    e = fromSlot
+    if isFree then
+      for s = fromSlot + 1, target do
+        if isFree(s) then e = s; break end
+      end
+    end
+  else
+    if not isFree then return nil end
+    for s = 0, target do
+      if isFree(s) then e = s; break end
+    end
+    if e == nil then return nil end
+  end
+  local moves = {}
+  if fromSlot ~= nil and e ~= fromSlot then moves[1] = { from = fromSlot, to = e } end   -- place into the hole
+  for s = e, target - 1 do
     moves[#moves + 1] = { from = s, to = s + 1 }
   end
   -- No order entries name incoming slots, so nothing to rename for the shift itself.
   store.boundary = target
   table.insert(group.order, GapIndex(group, anchorSlot), target)
-  return moves
+  return moves, e
 end
 
 -- Unpin: the kept item at `slot` leaves to incoming slot `toSlot`.
