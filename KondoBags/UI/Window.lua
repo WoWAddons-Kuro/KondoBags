@@ -391,6 +391,17 @@ local function DressCell(b, cell, theme)
     SetItemButtonCount(b, item and item.count or 0)
     SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
     SetItemButtonDesaturated(b, item and item.locked or false)
+    -- The template owns a "new item" glow (NewItemTexture + newitemglowAnim/flashAnim) that only
+    -- stock's UpdateItems drives; left alone it can show on every cell. We draw it ourselves:
+    -- glow only when the client flags the slot new (looted this session), exactly like stock.
+    local isNew = item ~= nil and C_NewItems and C_NewItems.IsNewItem and C_NewItems.IsNewItem(ref.bagID, ref.slot)
+    if b.NewItemTexture then b.NewItemTexture:SetShown(isNew and true or false) end
+    if b.BattlepayItemTexture then b.BattlepayItemTexture:Hide() end
+    if b.newitemglowAnim then
+      if isNew then if not b.newitemglowAnim:IsPlaying() then b.newitemglowAnim:Play() end
+      else b.newitemglowAnim:Stop() end
+    end
+    if b.flashAnim and not isNew then b.flashAnim:Stop() end
     -- Empty slot: the template leaves its icon region shown with no file; hide it so the glyph reads.
     if b.icon then b.icon:SetShown(item ~= nil) end
     if not item then
