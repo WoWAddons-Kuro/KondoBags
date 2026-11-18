@@ -66,21 +66,32 @@ local function CreateWindow(theme)
   if theme.frameTemplate then
     -- Blizzard portrait frame: it already has NineSlice, Bg, TitleContainer.TitleText, PortraitContainer.portrait,
     -- CloseButton. Use its own pieces so the look is exactly the client's.
-    frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
-    if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
-    elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
-    if frame.Portrait and theme.portraitScale then
-      -- Template: 62px at TOPLEFT (-5, 7). Shrink about the same top-left corner so it stays outset.
+    if theme.portraitScale and theme.portraitScale < 1 and NineSliceUtil and NineSliceLayouts then
+      -- The template's TopLeftCorner atlas carries the ring for a 62px portrait and cannot be scaled on
+      -- its own. Use the no-portrait border layout and draw a smaller portrait + ring ourselves.
+      local layout = NineSliceLayouts.ButtonFrameTemplateNoPortrait or NineSliceLayouts.PortraitFrameTemplateNoPortrait
+      if layout and frame.NineSlice then NineSliceUtil.ApplyLayout(frame.NineSlice, layout) end
+      if frame.PortraitContainer then frame.PortraitContainer:Hide() end
       local size = 62 * theme.portraitScale
-      frame.Portrait:SetSize(size, size)
-      frame.Portrait:ClearAllPoints()
-      frame.Portrait:SetPoint("TOPLEFT", frame.PortraitContainer, "TOPLEFT", -5 + (62 - size) * 0.35, 7 - (62 - size) * 0.35)
-      local mask = frame.PortraitContainer.CircleMask
-      if mask then
-        mask:ClearAllPoints()
-        mask:SetPoint("TOPLEFT", frame.Portrait, "TOPLEFT", 2 * theme.portraitScale, 0)
-        mask:SetPoint("BOTTOMRIGHT", frame.Portrait, "BOTTOMRIGHT", -2 * theme.portraitScale, 4 * theme.portraitScale)
-      end
+      local holder = CreateFrame("Frame", nil, frame)
+      holder:SetFrameLevel(frame:GetFrameLevel() + 20)
+      holder:SetSize(size, size)
+      holder:SetPoint("TOPLEFT", frame, "TOPLEFT", -6, 6)
+      frame.Portrait = holder:CreateTexture(nil, "ARTWORK")
+      frame.Portrait:SetAllPoints()
+      frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
+      frame.Portrait:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+      if frame.Portrait.SetMask then frame.Portrait:SetMask("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask") end
+      local ring = holder:CreateTexture(nil, "OVERLAY")
+      ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")   -- round gold ring, stock art
+      ring:SetTexCoord(0, 0.6, 0, 0.6)
+      ring:SetPoint("CENTER", holder, "CENTER", 10 * theme.portraitScale, -10 * theme.portraitScale)
+      ring:SetSize(size * 1.55, size * 1.55)
+      frame.PortraitRing = ring
+    else
+      frame.Portrait = frame.PortraitContainer and frame.PortraitContainer.portrait
+      if frame.SetPortraitToAsset then frame:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Bag_08")
+      elseif frame.Portrait then frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08") end
     end
     if frame.Bg and theme.bgTint then frame.Bg:SetVertexColor(unpack(theme.bgTint)) end
     frame.Title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
@@ -226,6 +237,7 @@ local function DressCell(b, cell, theme)
       b.emptyIcon:SetTexture(e.file)
       b.emptyIcon:SetDesaturated(e.desaturate and true or false)
       b.emptyIcon:SetAlpha(e.alpha or 0.5)
+      local t = e.tint or 1; b.emptyIcon:SetVertexColor(t, t, t)
       b.emptyIcon:SetPoint("TOPLEFT", e.inset or 0, -(e.inset or 0)); b.emptyIcon:SetPoint("BOTTOMRIGHT", -(e.inset or 0), e.inset or 0)
       b.emptyIcon:Show()
     end
@@ -442,15 +454,17 @@ function Window.Render()
   local f = theme.frame
   -- Vertical stack under the title bar: [padTop] search row [searchGap] grid ... footer [padBottom].
   local searchH = theme.searchHeight or 20
-  local searchTop = f.padTop + (theme.titleHeight - searchH) / 2
+  local searchTop = f.padTop + (theme.searchTopGap or (theme.titleHeight - searchH) / 2)
   frame.Grid:ClearAllPoints()
   frame.Grid:SetPoint("TOPLEFT", f.padLeft, -(f.padTop + theme.titleHeight))
   frame.Grid:SetSize(w - f.padLeft - f.padRight, rows * theme.cell.pitchY)
 
+  local gridW = w - f.padLeft - f.padRight
+  local searchW = gridW * (theme.searchWidthScale or 1) - 8
   frame.Search:ClearAllPoints()
   frame.Search:SetHeight(searchH)
+  frame.Search:SetWidth(searchW)
   frame.Search:SetPoint("TOPLEFT", frame, "TOPLEFT", f.padLeft + 6, -searchTop)
-  frame.Search:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -f.padRight - 2, -searchTop)
   frame.Money:ClearAllPoints()
   if theme.moneyFont then frame.Money:SetFontObject(theme.moneyFont) end
   if theme.moneyColor then frame.Money:SetTextColor(unpack(theme.moneyColor)) end
