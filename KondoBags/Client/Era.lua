@@ -76,10 +76,26 @@ end
 
 -- KondoBags_QuestFlags; GetContainerItemQuestInfo returns the same table on Era (confirmed in _EXTERNAL_APIS).
 function P.QuestInfo(bag, slot)
-  if not C_Container.GetContainerItemQuestInfo then return nil end
-  local q = C_Container.GetContainerItemQuestInfo(bag, slot)
-  if not q or not (q.isQuestItem or q.questID) then return nil end
-  return { isQuestItem = q.isQuestItem or false, questID = q.questID, isActive = q.isActive or false }
+  -- Era 1.15 DECLARES the same ItemQuestInfo struct (ContainerDocumentation.lua:659) but the live
+  -- client returned isQuestItem = false for a Scavenger Paw whose tooltip said "Quest Item" (owner,
+  -- 2026-11-18, screenshot). The tooltip line comes from the item CLASS, so that is the fallback:
+  -- GetItemInfoInstant classID 12 (Enum.ItemClass.Questitem) marks the item a quest item when the
+  -- quest API will not. questID / isActive (the "!" for quest starters) come only from the quest API.
+  local q = C_Container.GetContainerItemQuestInfo and C_Container.GetContainerItemQuestInfo(bag, slot) or nil
+  local isQuest = (q and q.isQuestItem) or false
+  if not isQuest then
+    local info = C_Container.GetContainerItemInfo(bag, slot)
+    local link = info and (info.hyperlink or info.itemID)
+    local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if link and getInstant then
+      local _, _, _, _, _, classID = getInstant(link)
+      local questClass = (Enum and Enum.ItemClass and Enum.ItemClass.Questitem) or 12
+      isQuest = classID == questClass
+    end
+  end
+  local questID = q and q.questID or nil
+  if not isQuest and not questID then return nil end
+  return { isQuestItem = isQuest, questID = questID, isActive = (q and q.isActive) or false }
 end
 
 function P.Pickup(bag, slot) C_Container.PickupContainerItem(bag, slot) end
