@@ -227,4 +227,13 @@ function BagState:AddGroup(name)
   return g
 end
 
+-- Right-click on a group's lock: remove the group; its items drop into incoming (D11 moves).
+function BagState:RemoveGroup(sectionID)
+  local moves = Sections.Dissolve(self.store, sectionID)
+  if not moves then return false end
+  self:ApplyMoves(moves)
+  self:Emit("changed")
+  return true
+end
+
 return BagState

@@ -43,7 +43,8 @@ function Sections.Create(store, name)
   local id = "s" .. store.nextID
   store.nextID = store.nextID + 1
   local group = { id = id, name = name or "", order = {} }
-  store.list[#store.list + 1] = group
+  -- New groups are drawn FIRST, directly under incoming; existing groups shift down (owner).
+  table.insert(store.list, 1, group)
   return group
 end
 
@@ -151,13 +152,27 @@ end
 function Sections.NoteSwapWithin(store, a, b) RenameSlotInOrders(store, a, b) end
 
 -- Remove a group; its slots join the previous group (or the next if it was first). Needs >= 2 groups.
+-- Remove a group. Its items drop into INCOMING: each of its slots is swapped down into keep's lowest
+-- slot (boundary) and that slot is released, so the released slots are always the lowest ones and
+-- Blizzard's loot order is preserved (D11). Returns the moves, or nil if the group is unknown or it
+-- is the last group (there must always be at least one).
 function Sections.Dissolve(store, sectionID)
   local g, i = Sections.Find(store, sectionID)
-  if not g or #store.list < 2 then return false end
-  local sink = store.list[i - 1] or store.list[i + 1]
-  for _, s in ipairs(g.order) do sink.order[#sink.order + 1] = s end
+  if not g or #store.list < 2 then return nil end
+  local moves = {}
+  -- copy: RenameSlotInOrders rewrites g.order while we iterate
+  local slots = {}
+  for k, s in ipairs(g.order) do slots[k] = s end
+  for _, slot in ipairs(slots) do
+    local low = store.boundary
+    if slot ~= low then
+      moves[#moves + 1] = { from = slot, to = low }
+      RenameSlotInOrders(store, slot, low)      -- the item that was at `low` now lives at `slot`
+    end
+    store.boundary = low + 1
+  end
   table.remove(store.list, i)
-  return true
+  return moves
 end
 
 -- ---------------------------------------------------------------------------

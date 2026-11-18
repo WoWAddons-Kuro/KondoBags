@@ -296,9 +296,30 @@ end
 Cell_OnClick = function(b, button)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
-  if button == "RightButton" then return end
+  if button == "RightButton" then
+    if cell.kind == Layout.CELL_DROP and not bag:HeldItem() then Window.ShowGroupMenu(b, cell.sectionID) end
+    return
+  end
   if bag:HeldItem() then bag:Drop(cell); return end
   if cell.kind == Layout.CELL_SLOT and cell.ref then bag:Pickup(cell.ref) end
+end
+
+-- Right-click menu on a group's lock cell. One item for now: remove the group (items -> incoming).
+function Window.ShowGroupMenu(anchor, sectionID)
+  local bag = view.bag
+  if not bag then return end
+  local g = bag:Section(sectionID)
+  if not g then return end
+  local canRemove = #bag.store.list > 1
+  if MenuUtil and MenuUtil.CreateContextMenu then
+    MenuUtil.CreateContextMenu(anchor, function(_, root)
+      root:CreateTitle((g.name ~= "" and g.name) or "Keep row")
+      local btn = root:CreateButton("Remove section", function() bag:RemoveGroup(sectionID) end)
+      if not canRemove and btn.SetEnabled then btn:SetEnabled(false) end
+    end)
+  elseif canRemove then
+    bag:RemoveGroup(sectionID)       -- clients without MenuUtil: right-click removes directly
+  end
 end
 
 Cell_OnReceiveDrag = function(b)

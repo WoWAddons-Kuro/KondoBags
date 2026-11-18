@@ -102,6 +102,34 @@ test("reconcile: legacy stores become an empty Keep at the top; unclaimed keep s
   eq(#st2.list[1].order, 3, "slots 8,9 unclaimed -> appended to group 1")
 end)
 
+test("AddGroup: the new empty group is drawn FIRST, directly under incoming; Keep moves down", function()
+  local bag = B.New({ store = KeepStore(9, 2), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local g = bag:AddGroup("")
+  eq(bag.store.list[1], g); eq(bag.store.list[2].name, "Keep")
+  local rows = bag:Layout().rows
+  eq(rows[#rows - 1].sectionID, g.id, "new group's lock row comes before Keep"); eq(#rows[#rows - 1].cells, 1)
+  eq(rows[#rows].sectionID, bag.store.list[2].id)
+end)
+
+test("RemoveGroup: items drop into incoming via the lowest keep slot; loot order preserved; last group cannot go", function()
+  -- keep = slots 6,7,8 in ONE group; add a second group and move item 8 into it, then remove that group
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local g2 = bag:AddGroup("Second")                       -- drawn first
+  S.MoveToEnd(bag.store, g2, 8)                           -- item 8 now shows in g2
+  eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")                 -- groups print in order: g2 (8) then Keep (6 7)
+  ok(bag:RemoveGroup(g2.id))
+  -- slot 8 swapped down into slot 6 (the lowest keep slot), slot 6 released to incoming
+  eq(bag.store.boundary, 7)
+  eq(bag.slots[7].item.itemID, 108, "item 8 now physically in slot 6 = top of incoming")
+  eq(bag.slots[9].item.itemID, 106, "item 6 moved up to slot 8, still kept")
+  eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7")
+  eq(#bag.store.list, 1)
+  ok(not bag:RemoveGroup(bag.store.list[1].id), "cannot remove the last group")
+  -- removing an EMPTY group is a no-op physically
+  local g3 = bag:AddGroup("")
+  ok(bag:RemoveGroup(g3.id)); eq(bag.store.boundary, 7); eq(Picture(bag), "8 5 4 3 2 1 0 | 6 7")
+end)
+
 -- ---------------------------------------------------------------------------
 -- BagState (controller) -- the owner's worked examples
 -- ---------------------------------------------------------------------------
