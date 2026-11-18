@@ -22,7 +22,7 @@ read_globals = {
     "InCombatLockdown", "hooksecurefunc", "IsShiftKeyDown", "IsAltKeyDown", "IsControlKeyDown",
     "GetCursorInfo", "CursorHasItem", "ClearCursor", "GetCursorPosition", "SetCursor", "ResetCursor",
     "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL", "YES", "NO",
-    "C_Container", "C_Item", "C_AddOns", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
+    "C_Container", "C_Item", "C_AddOns", "C_QuestLog", "GetQuestLogTitle", "GetMoney", "InterfaceOptionsFrame_OpenToCategory", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
     "SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
     "NineSliceUtil", "NineSliceLayouts",
     "BackdropTemplateMixin", "Settings", "InterfaceOptions_AddCategory", "MenuUtil",

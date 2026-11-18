@@ -17,9 +17,15 @@
 Libs\LibStub\LibStub.lua
 Libs\LibEditMode\embed.xml
 
+Client\Client.lua
+Client\Mainline.lua
+Client\Era.lua
+Client\Mock.lua
+
 Core\Sections.lua
 Core\Layout.lua
 Core\BagState.lua
+Core\Scan.lua
 
 UI\Theme.lua
 UI\Themes\Classic.lua

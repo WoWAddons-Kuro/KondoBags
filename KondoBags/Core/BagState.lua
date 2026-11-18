@@ -139,6 +139,7 @@ end
 
 function BagState:Pickup(ref)
   if not ref or not ref.item then return false end
+  if self.readOnly then return false end          -- live bag before the real cursor is wired (Phase L step 4)
   self.held = ref
   CloseCursorGap(self)
   self:Emit("cursor")

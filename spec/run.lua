@@ -7,6 +7,7 @@ local function LoadCore(file)
   chunk("KondoBags", ns)
 end
 LoadCore("Sections.lua"); LoadCore("Layout.lua"); LoadCore("BagState.lua")
+LoadCore("Scan.lua"); LoadCore("../Client/Client.lua"); LoadCore("../Client/Mock.lua")
 local S, L, B = ns.Sections, ns.Layout, ns.BagState
 
 local tests, failures = {}, 0
@@ -320,6 +321,38 @@ test("typed slots: one run above incoming, mixed kinds, do not shift the general
   eq(bag.typedSlots[2].item.itemID, 900); ok(bag.typedSlots[1].item == nil)
   ok(bag:Pickup(bag.typedSlots[3]))                                     -- quiver item
   ok(not bag:Drop(rows[1].cells[3]), "quiver -> herb slot refused")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Client provider + Scan (Phase L step 1/2)
+-- ---------------------------------------------------------------------------
+test("Client.KindFromFamily: lowest set bit wins; 0/nil = general; unknown bits = general", function()
+  local K = ns.Client.KindFromFamily
+  eq(K(nil), "general"); eq(K(0), "general")
+  eq(K(1), "quiver"); eq(K(2), "ammo"); eq(K(4), "soul"); eq(K(32), "herb"); eq(K(64), "enchanting")
+  eq(K(256), "keyring"); eq(K(1024), "mining")
+  eq(K(32 + 1024), "herb", "multi-bit mask: lowest bit")
+  eq(K(2048), "general", "item-only flag on a bag is not a kind")
+end)
+
+test("Scan.Refs over the Mock provider: general first (flat index = bag order), typed after, free counts", function()
+  local refs = {
+    { bagID = 0, slot = 1, kind = "general", item = Item(1) }, { bagID = 0, slot = 2, kind = "general" },
+    { bagID = 1, slot = 1, kind = "general" },
+    { bagID = 2, slot = 1, kind = "herb", item = Item(7) }, { bagID = 2, slot = 2, kind = "herb" },
+  }
+  local P = ns.Client.NewMock(refs)
+  eq(P.BagKind(2), "herb"); eq(P.NumSlots(0), 2); eq((P.FreeSlots(0)), 1)
+  local out, sum = ns.Scan.Refs(P)
+  eq(#out, 5); eq(sum.general, 3); eq(sum.typed, 2)
+  eq(out[1].bagID, 0); eq(out[1].slot, 1); eq(out[1].item.itemID, 1)
+  eq(out[3].bagID, 1); eq(out[4].kind, "herb"); eq(out[4].item.itemID, 7)
+  eq(sum.free.general, 2); eq(sum.free.herb, 1)
+  -- the same list feeds BagState unchanged
+  local bag = B.New({ store = S.NewStore(3), slots = out, columns = 4 })
+  eq(#bag.slots, 3); eq(#bag.typedSlots, 2)
+  -- Mock Pickup emulates the cursor: pick up then place
+  P.Pickup(0, 1); ok(refs[1].item == nil); P.Pickup(0, 2); eq(refs[2].item.itemID, 1)
 end)
 
 -- ---------------------------------------------------------------------------

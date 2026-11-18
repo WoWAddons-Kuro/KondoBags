@@ -588,6 +588,7 @@ function Window.SetTheme(id)
   if wasShown then frame:Show() end
 end
 function Window.ThemeID() return view.themeID end
+function Window.SetMoney(copper) view.money = copper or 0; if frame and frame.Money then frame.Money:SetText(FormatMoney(view.money)) end end
 function Window.Frame() return frame end
 function Window.Show() CreateWindow(); Window.Render(); frame:Show() end
 function Window.Hide() if frame then frame:Hide() end; if view.bag then view.bag:ClearCursor() end end
