@@ -31,6 +31,9 @@ local function Placement()
   --   y = CONTAINER_OFFSET_Y               (Forever 85, Era 70)
   -- (_ref/blizzard/forever/ContainerFrame.lua:1320-1395, classic_era/ContainerFrame_Shared.lua:994-1041).
   -- Read once; after that the saved anchor rules. `placed` marks that an anchor exists.
+  -- A store saved before `placed` existed already carries point/x/y the player chose: honour it and
+  -- just stamp the flag -- otherwise every /reload snapped a moved window back to the stock spot.
+  if p.point then p.placed = true end
   if not p.placed then
     local barW = 0
     if EditModeUtil and EditModeUtil.GetRightActionBarWidth then
