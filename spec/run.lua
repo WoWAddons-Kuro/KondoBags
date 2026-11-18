@@ -177,18 +177,19 @@ test("pin the item already at boundary-1: zero moves", function()
   eq(Picture(bag), "4 3 2 1 0 | 5 6 7 8")
 end)
 
-test("pin with a FREE incoming slot above: shift stops at the hole; items between stay put", function()
-  -- slots 0..5 incoming, 4 is empty; pin item 1 (slot 1). Hole e = 4: 1 -> 4, then 4<->5.
-  -- Items 2 and 3 do not move; slot 1 is now empty where item 1 was.
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 5, 6, 7, 8 }), columns = 7 })
-  eq(Picture(bag), "5 _ 3 2 1 0 | 6 7 8")
-  ok(bag:Pickup(bag.slots[2]))                  -- item 1
+test("pin: the hole is the HIGHEST free slot below the top; only items above it shift (minimal movement)", function()
+  -- slots 0..5 incoming, 2 and 4 free; pin item 0. Hole e = 4 (nearest to the blocking item 5):
+  -- 0 -> 4, then 4<->5. Items 1 and 3 do not move; slot 2 stays free; slot 0 becomes the hole.
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 3, 5, 6, 7, 8 }), columns = 7 })
+  eq(Picture(bag), "5 _ 3 _ 1 0 | 6 7 8")
+  ok(bag:Pickup(bag.slots[1]))                  -- item 0
   ok(bag:Drop(LockCell(bag)))
-  eq(Picture(bag), "5 3 2 _ 0 | 1 6 7 8")
+  eq(Picture(bag), "5 3 _ 1 _ | 0 6 7 8")
   eq(bag.store.boundary, 5)
   eq(bag.slots[4].item.itemID, 103, "item 3 untouched at slot 3")
-  eq(bag.slots[3].item.itemID, 102, "item 2 untouched at slot 2")
-  ok(bag.slots[2].item == nil, "slot 1 (where item 1 was) is now the hole")
+  eq(bag.slots[2].item.itemID, 101, "item 1 untouched at slot 1")
+  eq(bag.slots[5].item.itemID, 105, "item 5 stepped down into slot 4")
+  ok(bag.slots[1].item == nil, "slot 0 (where item 0 was) is now the hole")
 end)
 
 test("pin when the top incoming slot itself is free: one move, nothing shifts", function()
@@ -198,13 +199,20 @@ test("pin when the top incoming slot itself is free: one move, nothing shifts", 
   eq(Picture(bag), "4 3 2 _ 0 | 1 6 7 8")
 end)
 
-test("PinFromIncoming with fromSlot nil (external item): lands in the lowest free slot, shifts from there", function()
+test("pin with no free slot above the item: full shift from the item (the only option)", function()
+  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  ok(bag:Pickup(bag.slots[3]))                  -- item 2; slot 0 free but BELOW it, irrelevant
+  ok(bag:Drop(LockCell(bag)))
+  eq(Picture(bag), "5 4 3 1 _ | 2 6 7 8")
+end)
+
+test("PinFromIncoming with fromSlot nil (external item): lands in the highest free slot, shifts from there", function()
   local st = KeepStore(9, 3)
-  local slots = Bag(9, { 0, 1, 3, 4, 5, 6, 7, 8 })      -- slot 2 free
+  local slots = Bag(9, { 0, 1, 3, 5, 6, 7, 8 })         -- slots 2 and 4 free
   local isFree = function(s) return slots[s + 1].item == nil end
   local moves, e = S.PinFromIncoming(st, st.list[1], nil, nil, isFree)
-  eq(e, 2); eq(#moves, 3)                                -- 2<->3, 3<->4, 4<->5
-  eq(moves[1].from, 2); eq(moves[3].to, 5)
+  eq(e, 4); eq(#moves, 1)                                -- 4<->5 only
+  eq(moves[1].from, 4); eq(moves[1].to, 5)
   eq(st.boundary, 5); eq(st.list[1].order[1], 5)
   local full = Bag(3, { 0, 1 }); local st2 = KeepStore(3, 1)
   ok(S.PinFromIncoming(st2, st2.list[1], nil, nil, function(s) return full[s + 1].item == nil end) == nil, "no free slot -> nil")

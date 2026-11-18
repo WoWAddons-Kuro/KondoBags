@@ -23,6 +23,14 @@ A bag replacement whose organizing idea is the stock bag grid plus **Keep**: ite
 
 The mental model is **a person who organizes their own backpack**, not a bag automator. Everything the addon remembers about how *this character* sorts things is stored **per character**. There is no account-wide pin state.
 
+## Philosophy: visual stability — minimise item movement
+
+**Everything in KondoBags is designed around moving as few items as possible, so the picture stays stable.** A cell the player has learnt the position of should still be there next time they open the bag. Concretely:
+
+- Incoming is drawn in Blizzard's own slot order and is never re-sorted by us; new loot opens a *new* cell at the top-left frontier and nothing already visible moves.
+- Keep positions are an indirection map (`order` lists), so reordering inside Keep is visual only — zero physical moves.
+- When a physical move is unavoidable (a pin needs the top incoming slot; an unpin frees a Keep slot), the algorithm picks the variant that touches the **fewest cells**: free slots are consumed before occupied ones, a hole nearest the blocking item is used so the shift chain is as short as possible, and a freed Keep slot is filled with ONE swap, never a cascade. Every rule in "Invariants (D13)" and the gesture table is a consequence of this principle; when a new case comes up, choose the move set that disturbs the fewest cells.
+
 The design goal is the smallest possible configuration surface and the least adornment. The complete settings list is in "Settings" and is meant to stay that short.
 
 ## Decisions log
@@ -219,18 +227,18 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 **Invariants (D13).** The slot model in four sentences; everything in the gesture table below follows from these.
 
 1. **Keep never has a free slot.** A section is exactly as large as its item count. Whenever a Keep slot would become free, the item from Keep's **lowest** slot slides into it and that lowest slot is released to incoming (D11 shrink). Loot can therefore never land inside Keep.
-2. **Pinning SHIFTS incoming down from the nearest hole; it never swaps.** To land an item from incoming slot `f` in Keep, Keep claims slot `boundary-1`. Let `e` be the lowest FREE incoming slot above `f` (or `f` itself if there is none). The item is placed at `e`, then every incoming item in `e+1 .. boundary-1` steps down one slot and the pinned item arrives at `boundary-1`. Items strictly between `f` and `e` never move; incoming stays in Blizzard's loot order. **This is the only time incoming items change visual position, and it is unavoidable**: the top incoming slot has to be vacated and a swap would drop the displaced item mid-incoming. Cost is `boundary-1-e` adjacent moves plus one place (one `PickupContainerItem` pair each in M4). An item from OUTSIDE the bag (`f` = nil: bank, mail, trade cursor) uses the same rule with `e` = the lowest free incoming slot; no free slot means the pin cannot happen, exactly like stock.
+2. **Pinning SHIFTS incoming down from the hole nearest the top; it never swaps.** To land an item from incoming slot `f` in Keep, Keep claims slot `boundary-1`. Let `e` be the **highest** FREE incoming slot above `f` — the free slot closest to the blocking items at the top (or `f` itself if there is none). The item is placed at `e`, then only the items in `e+1 .. boundary-1` step down one slot and the pinned item arrives at `boundary-1`. Everything below `e` never moves; incoming stays in Blizzard's loot order. This is the minimal-movement choice (see Philosophy): the chain is as short as the free space allows. Cost is `boundary-1-e` adjacent moves plus one place (one `PickupContainerItem` pair each in M4); zero if `f == boundary-1`, one if `boundary-1` is free. An item from OUTSIDE the bag (`f` = nil: bank, mail, trade cursor) uses the same rule with `e` = the highest free incoming slot; no free slot means the pin cannot happen, exactly like stock.
 3. **Restricted bag types are additional incoming runs.** Quiver, ammo, soul, herb, enchanting, keyring, reagent: each is its own incoming-style run keyed by slot kind, drawn with the same bottom-anchored rule. **No Keep for alternate bag types** (decision: no; revisit only if a real need appears). Only `general` slots participate in the Keep range.
 4. **Bag swaps move nothing.** Keep positions are an **indirection map** (`group.order` lists slot indices; the view resolves them at render). There is no stored mapping from a visual Keep position to a bag/slot pair, so equipping, unequipping or rearranging bags re-indexes the flat slot list and `Reconcile` re-validates the ranges; no items are moved and no visual position changes unless the slot count itself shrank below the Keep range.
 
 ```
- pin item at incoming slot 1, slot 4 free       unpin kept item at slot 7 onto EMPTY incoming slot 2:
+ pin item at slot 0, slots 2 and 4 free         unpin kept item at slot 7 onto EMPTY incoming slot 2:
  (boundary 6):
-   before   5 _ 3 2 1 0 | 6 7 8                  before   5 4 3 _ 1 0 | 6 7 8
-   place    1→4 (e = 4) ; shift 5→4, item→5      move     7→2 ; hole at 7 ; 6→7 ; slot 6 released
-   after    5 3 2 _ 0 | 1 6 7 8   (boundary 5)   after    _ 5 4 3 2 1 0 | 7 8   (boundary 7)
-   (items 2 and 3 never moved; the hole           (incoming order preserved; the freed slot is the
-    went from slot 4 to slot 1)                    top-left one, where Blizzard loots next)
+   before   5 _ 3 _ 1 0 | 6 7 8                  before   5 4 3 _ 1 0 | 6 7 8
+   place    0→4 (e = 4, nearest the top) ; 5→4   move     7→2 ; hole at 7 ; 6→7 ; slot 6 released
+   after    5 3 _ 1 _ | 0 6 7 8   (boundary 5)   after    _ 5 4 3 2 1 0 | 7 8   (boundary 7)
+   (only item 5 moved; items 1 and 3 untouched;   (incoming order preserved; the freed slot is the
+    slot 2 still free, slot 0 now free)            top-left one, where Blizzard loots next)
 ```
 
 Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`): the cell drawn under the mouse while an item is carried with Shift down, anchored to the kept item that was hovered (`anchorRef`; nil = the lock). The gap takes the anchor's column and the anchor slides one cell left, which on a right-aligned row is exactly what puts the gap under a mouse that was over the anchor. It opens where the mouse is and does not move until the mouse enters a cell naming a different anchor.
@@ -239,7 +247,7 @@ Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`
 |---|---|---|
 | Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
 | Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
-| Drop loose `l` (slot `s_l`) on a section's **lock cell** | `e` = lowest free incoming slot above `s_l`, else `s_l`; move `s_l → e` if different; then for `s = e .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order; the hole moves from `e` to `s_l` (D13.2). Zero moves if `s_l == boundary-1`; one move if `boundary-1` is free. |
+| Drop loose `l` (slot `s_l`) on a section's **lock cell** | `e` = highest free incoming slot above `s_l`, else `s_l`; move `s_l → e` if different; then for `s = e .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order; the hole moves from `e` to `s_l` (D13.2). Zero moves if `s_l == boundary-1`; one move if `boundary-1` is free. |
 | Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
 | **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
 | Loose on loose / empty | stock swap/place | stock |

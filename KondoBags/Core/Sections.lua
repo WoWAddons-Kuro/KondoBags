@@ -119,10 +119,10 @@ end
 --               item from bank/mail/trade; M4). isFree(slot) -> bool reports incoming occupancy.
 --
 -- The item is carried up by a SHIFT, not a swap, so incoming keeps Blizzard's loot order: pick the
--- hole `e` = the lowest FREE incoming slot above fromSlot (fromSlot itself when there is none; the
--- lowest free slot anywhere when fromSlot is nil). Place the item at `e`, then chain adjacent swaps
+-- hole `e` = the HIGHEST free incoming slot below boundary (nearest to the blocking items at the top;
+-- fromSlot itself when there is none above it). Place the item at `e`, then chain adjacent swaps
 -- e<->e+1 ... boundary-2<->boundary-1, each carrying it one slot up and the displaced item one down.
--- Items strictly between fromSlot and `e` never move. Returns the moves and `e`; nil when an
+-- Only the items from `e` up to the top move; everything below `e` stays. Returns the moves and `e`; nil when an
 -- external item has no free slot to land in. For fromSlot == nil the caller must put the item into
 -- slot `e` before applying the moves.
 function Sections.PinFromIncoming(store, group, fromSlot, anchorSlot, isFree)
@@ -131,13 +131,13 @@ function Sections.PinFromIncoming(store, group, fromSlot, anchorSlot, isFree)
   if fromSlot ~= nil then
     e = fromSlot
     if isFree then
-      for s = fromSlot + 1, target do
+      for s = target, fromSlot + 1, -1 do
         if isFree(s) then e = s; break end
       end
     end
   else
     if not isFree then return nil end
-    for s = 0, target do
+    for s = target, 0, -1 do
       if isFree(s) then e = s; break end
     end
     if e == nil then return nil end
