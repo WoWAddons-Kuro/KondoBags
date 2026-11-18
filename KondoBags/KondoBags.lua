@@ -67,9 +67,12 @@ end
 -- never shows those frames, so we do the same clear ourselves: on first scan (login state is not
 -- "new") and whenever our window closes (anything looted while it was open has been seen).
 local function ClearNewItems()
-  if not (C_NewItems and C_NewItems.RemoveNewItem) or not liveBag then return end
-  for _, r in ipairs(liveBag.slots) do C_NewItems.RemoveNewItem(r.bagID, r.slot) end
-  for _, r in ipairs(liveBag.typedSlots) do C_NewItems.RemoveNewItem(r.bagID, r.slot) end
+  if not (C_NewItems and C_NewItems.RemoveNewItem) then return end
+  -- Straight from the provider, not liveBag: this must also run at login before any window exists.
+  local P = ns.Client.Active()
+  for _, bag in ipairs(P.BagIDs()) do
+    for slot = 1, P.NumSlots(bag) do C_NewItems.RemoveNewItem(bag, slot) end
+  end
 end
 ns.ClearNewItems = ClearNewItems
 
@@ -245,6 +248,8 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
     f:RegisterEvent("PLAYER_MONEY")
     f:RegisterEvent("ITEM_LOCK_CHANGED")
     f:RegisterEvent("CURSOR_CHANGED")
+    -- Login state is not "new": clear the client's new-item flags once bag data is available.
+    f:RegisterEvent("PLAYER_ENTERING_WORLD")
     Print("loaded (%s). /kondo to open your bags, /kondo mock for the mockup, /kondo status", ns.Client.Active().name)
   elseif event == "BAG_UPDATE" then
     dirty = true
@@ -254,6 +259,9 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
     OnItemLockChanged(arg1, arg2)
   elseif event == "CURSOR_CHANGED" then
     SyncCursor()
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    ClearNewItems()
+    f:UnregisterEvent("PLAYER_ENTERING_WORLD")
   elseif event == "PLAYER_MONEY" then
     if source == "live" then ns.Window.SetMoney(GetMoney and GetMoney() or 0) end
   end
