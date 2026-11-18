@@ -240,8 +240,11 @@ function BagState:Drop(cell)
         return opsFor(ops)
       end
       if Sections.IsKept(store, held.slotIndex) then
-        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)           -- visual reorder; item stays on the cursor
-        return {}
+        -- Kept item re-ordered (same or another group): a map edit only, but the item is on the REAL
+        -- cursor (D14), so ONE Pickup on its own slot drops it back -- otherwise the player had to
+        -- click once more to finish the drop.
+        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)
+        return { { place = true, bagID = held.bagID, slot = held.slot } }
       end
       -- Loose item from incoming on the cursor: mark its slot kept; ONE Pickup on its own slot puts it back.
       if not Sections.Pin(store, group, held.slotIndex, anchorSlot, isFree) then return nil end

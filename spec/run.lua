@@ -359,6 +359,22 @@ test("live pin from incoming: ONE Pickup (put the cursor item back); store commi
   ok(S.IsKept(bag.store, 2), "committed"); eq(bag.store.list[1].order[1], 2)
 end)
 
+test("live kept -> other group's lock: map edit plus ONE Pickup on its own slot so the real cursor drops", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
+  bag.live = true
+  local g2 = bag:AddGroup("Second")
+  local issued = {}
+  bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = s end },
+    function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
+  bag:SetCursor(bag.slots[8])                   -- kept item 7 on the real cursor
+  local lock
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_DROP and c.sectionID == g2.id then lock = c end end end
+  ok(bag:Drop(lock))
+  eq(#issued, 1); eq(issued[1], 8, "one Pickup on slot 8 (item 7's own slot) puts the cursor item back")
+  bag.moveQueue:OnLockChanged(false)
+  eq(S.SectionOfSlot(bag.store, 7).id, g2.id, "moved to the second group")
+end)
+
 test("hideLocks: external cursor with no free general slot emits no lock / gap cells", function()
   local bag = B.New({ store = KeepStore({ 5 }), slots = Bag(6, { 0, 1, 2, 3, 4, 5 }), columns = 6 })
   bag.live = true
