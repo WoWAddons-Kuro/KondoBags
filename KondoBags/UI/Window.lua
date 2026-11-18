@@ -521,12 +521,19 @@ local function DressCell(b, cell, theme)
     SetNoDrop(b, refuses, item ~= nil, theme)
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     if cell.slim then
-      -- Slim lock (gutter cell, half width): the round Quickslot ring would be clipped, so swap it for
-      -- the flat slot colour and let the lock glyph fill the narrow cell.
+      -- Slim lock (gutter cell, half width): flat slot colour instead of the round Quickslot ring, and
+      -- the lock glyph keeps its FULL-cell size centred on the slim cell, clipped by the cell edges
+      -- (owner: slim the slot, not the key). SetGlyph anchored it edge-to-edge; re-anchor after.
       if b.normal then b.normal:Hide() end
       b.bg:SetColorTexture(unpack(theme.slimLockBg or theme.slotFlat or { 0, 0, 0, 0.35 })); b.bg:Show()
-      SetGlyph(b, theme.slimDropGlyph or theme.dropGlyph)
+      local g = theme.slimDropGlyph or theme.dropGlyph
+      SetGlyph(b, g)
+      local full = theme.cell.size - 2 * (g.inset or 0)
+      b.emptyIcon:ClearAllPoints()
+      b.emptyIcon:SetPoint("CENTER"); b.emptyIcon:SetSize(full, full)
+      b:SetClipsChildren(true)
     else
+      b:SetClipsChildren(false)
       SetGlyph(b, theme.dropGlyph)
     end
   elseif cell.kind == Layout.CELL_GAP then
