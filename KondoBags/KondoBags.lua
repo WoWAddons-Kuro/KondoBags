@@ -18,7 +18,7 @@ local function InitDB()
   KondoBagsDB.version = KondoBagsDB.version or DB_VERSION
   KondoBagsDB.theme = KondoBagsDB.theme or "classic"
   if KondoBagsDB.kindTint == nil then KondoBagsDB.kindTint = true end   -- border tint on restricted-bag cells
-  KondoBagsDB.typedGlyph = KondoBagsDB.typedGlyph or "bag"               -- empty typed-slot art: "bag" (equipped bag's icon) | "kind" (item-type art)
+  KondoBagsDB.typedGlyph = KondoBagsDB.typedGlyph or "bag" -- empty typed-slot art: "bag" (equipped bag's icon) | "kind" (item-type art)
   KondoBagsDB.ammoGlyph = nil                                             -- pre-release key, retired
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }

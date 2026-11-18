@@ -330,15 +330,15 @@ local function SetGlyph(b, g)
 end
 
 -- Glyph for an EMPTY cell. General slots: theme.slotEmptyIcon. Typed slots: theme.kindGlyph[kind].
--- Ammo kinds (quiver / ammo pouch) follow KondoBagsDB.ammoGlyph:
---   "pouch" (default) -- the icon of the quiver / pouch actually equipped (ref.bagIcon, from the provider),
---                         so an empty cell reads "this is my quiver"; falls back to the kind glyph
---   "ammo"            -- the kind glyph (Blizzard's paperdoll ammo-slot art), bag-agnostic
+-- Typed slots follow KondoBagsDB.typedGlyph (keyring has no equipped bag, bagIcon nil: always its kind glyph):
+--   "bag"  (default) -- the icon of the bag actually equipped (ref.bagIcon, from the provider),
+--                         so an empty cell reads "this is my quiver / herb bag"; falls back to the kind glyph
+--   "kind"           -- the theme's item-type art for the kind (herb, ammo-slot art, soul shard, ...)
 local function EmptyGlyph(cell, theme)
   local kind = cell.slotKind
   if not kind then return theme.slotEmptyIcon end
   local g = theme.kindGlyph and theme.kindGlyph[kind]
-  if (kind == "quiver" or kind == "ammo") and (KondoBagsDB == nil or KondoBagsDB.ammoGlyph ~= "ammo") then
+  if KondoBagsDB == nil or KondoBagsDB.typedGlyph ~= "kind" then
     local icon = cell.ref and cell.ref.bagIcon
     if icon then
       local base = theme.bagIconGlyph or g or {}
