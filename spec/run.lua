@@ -94,13 +94,13 @@ test("partition: pinned items leave loose, same itemID twice both go", function(
   eq(#input.loose, 2, "one item + one empty")
 end)
 
-test("partition: section slots come out in pin order, newest last (lands left of hearthstone)", function()
+test("partition: newest pin comes FIRST, right next to the lock cell", function()
   local st = S.NewStore()                       -- Keep = { 6948 }
-  ok(S.Pin(st, "s1", 2589))                     -- cloth pinned after hearthstone -> order { 6948, 2589 }
-  local slots = { Ref(0, 1, 2589), Ref(0, 2, 6948) }   -- bag order has cloth FIRST
+  ok(S.Pin(st, "s1", 2589))                     -- cloth pinned after hearthstone -> order { 2589, 6948 }
+  local slots = { Ref(0, 1, 6948), Ref(0, 2, 2589) }   -- bag order has hearthstone FIRST
   local input = S.Partition(st, slots, 10)
-  eq(input.sections[1].slots[1].item.itemID, 6948, "hearthstone first")
-  eq(input.sections[1].slots[2].item.itemID, 2589, "newest pin last")
+  eq(input.sections[1].slots[1].item.itemID, 2589, "newest pin first (next to lock)")
+  eq(input.sections[1].slots[2].item.itemID, 6948, "hearthstone pushed right")
   -- stores saved before `order` existed get one rebuilt
   local legacy = { nextID = 2, list = { { id = "s1", name = "Keep", items = { [6948] = true } } } }
   eq(S.Partition(legacy, slots, 10).sections[1].slots[1].item.itemID, 6948)

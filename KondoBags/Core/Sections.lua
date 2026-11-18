@@ -67,7 +67,9 @@ function Sections.Pin(store, sectionID, itemID)
   end
   if target.items[itemID] then return false end
   target.items[itemID] = true
-  target.order[#target.order + 1] = itemID
+  -- Newest FIRST: the run reads left-to-right from the lock cell, so the item you just dropped
+  -- appears right where you dropped it, next to the lock; older pins shift right.
+  table.insert(target.order, 1, itemID)
   return true
 end
 
