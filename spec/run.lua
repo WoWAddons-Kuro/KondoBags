@@ -22,26 +22,28 @@ local function Ref(bag, slot, itemID)
 end
 
 -- ---------------------------------------------------------------------------
-test("layout: fresh character = one plus cell then loose slots, bottom-anchored", function()
+test("layout: fresh character = plus top-left, loose slots bottom-anchored", function()
   local loose = { Ref(0, 1, 10), Ref(0, 2), Ref(0, 3) }
   local r = S.Layout({ columns = 4, sections = {}, loose = loose })
-  eq(#r.rows, 1, "rows")
+  -- 3 slots in 4 columns: partial row of 3 in cols 2..4; col 1 is free so the + takes it
+  eq(#r.rows, 1, "plus shares the partial top row")
   eq(r.rows[1].cells[1].kind, S.CELL_PLUS, "first cell is +")
-  eq(r.rows[1].cells[1].col, 1, "full row starts at col 1")
-  eq(#r.rows[1].cells, 4, "plus + 3 slots")
+  eq(r.rows[1].cells[1].col, 1, "+ in column 1")
+  eq(r.rows[1].cells[2].col, 2)
+  eq(#r.rows[1].cells, 4)
   eq(r.rows[1].dividerAbove, false, "no divider on first run")
   eq(r.cellCount, 4)
 end)
 
-test("layout: partial row is on top and right-aligned (stock bag fill)", function()
-  -- 7 cells (plus + 6) in 4 columns -> top row has 3 cells in cols 2..4, bottom row full
-  local loose = { Ref(0, 1, 1), Ref(0, 2, 2), Ref(0, 3, 3), Ref(0, 4), Ref(0, 5), Ref(0, 6) }
+test("layout: plus gets its own top row when column 1 of the top row is taken", function()
+  -- 8 slots in 4 columns -> two full rows; the + needs a new top row
+  local loose = { Ref(0, 1, 1), Ref(0, 2, 2), Ref(0, 3, 3), Ref(0, 4), Ref(0, 5), Ref(0, 6), Ref(0, 7), Ref(0, 8) }
   local r = S.Layout({ columns = 4, sections = {}, loose = loose })
-  eq(#r.rows, 2)
-  eq(#r.rows[1].cells, 3, "top row partial");  eq(r.rows[1].cells[1].col, 2, "right-aligned")
-  eq(r.rows[1].cells[1].kind, S.CELL_PLUS, "plus is first in reading order")
-  eq(#r.rows[2].cells, 4, "bottom row full");  eq(r.rows[2].cells[1].col, 1)
-  eq(r.rows[2].cells[4].ref.slot, 6, "last slot bottom-right")
+  eq(#r.rows, 3)
+  eq(#r.rows[1].cells, 1, "plus alone on top"); eq(r.rows[1].cells[1].kind, S.CELL_PLUS); eq(r.rows[1].cells[1].col, 1)
+  eq(#r.rows[2].cells, 4, "full"); eq(r.rows[2].cells[1].col, 1)
+  eq(#r.rows[3].cells, 4, "full"); eq(r.rows[3].cells[4].ref.slot, 8, "last slot bottom-right")
+  eq(r.rows[1].dividerAbove, false); eq(r.rows[2].dividerAbove, false)
 end)
 
 test("layout: section = items then handle, divider only after first run", function()

@@ -19,6 +19,7 @@
 -- Rules (SPECS/00 "Bag window"):
 --   * every section is its own run of cells, items first, then ONE handle cell; a divider line sits
 --     above the first row of each section after the first;
+--   * the unsectioned remainder has ONE plus cell pinned to its TOP-LEFT corner, then its slots; no handle, no name;
 --   * the unsectioned remainder starts with ONE plus cell, then its slots; no handle, no name;
 --   * cells fill left-to-right; a run never shares a row with another run;
 --   * a run is bottom-anchored like the stock bags: its last row is full, the partial row is on TOP,
@@ -84,11 +85,22 @@ function Sections.Layout(input)
     first = false
   end
 
-  local loose = { { kind = CELL_PLUS } }
+  -- Loose run: slots bottom-anchored like everything else, but the + cell is pinned to the TOP-LEFT
+  -- corner of the run. If the top row already has a cell in column 1, a new top row is added for it.
+  local loose = {}
   for _, ref in ipairs(input.loose or {}) do
     loose[#loose + 1] = { kind = CELL_SLOT, ref = ref }
   end
-  Append(LayoutRun(loose, columns, nil, not first))
+  local looseRows = LayoutRun(loose, columns, nil, not first)
+  local plus = { kind = CELL_PLUS, col = 1 }
+  local top = looseRows[1]
+  if top and top.cells[1].col > 1 then
+    table.insert(top.cells, 1, plus)
+  else
+    table.insert(looseRows, 1, { cells = { plus }, sectionID = nil, dividerAbove = not first })
+    if top then top.dividerAbove = false end
+  end
+  Append(looseRows)
 
   return out
 end
