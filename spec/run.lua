@@ -28,7 +28,7 @@ end
 -- Store with one Keep section owning the top `k` slots of an n-slot bag (visual order = ascending).
 local function KeepStore(n, k)
   local st = S.NewStore(n)
-  st.list[1].boundary = n - k
+  st.boundary = n - k                       -- D12: one keep-wide boundary
   for s = n - k, n - 1 do st.list[1].order[#st.list[1].order + 1] = s end
   return st
 end
@@ -88,16 +88,18 @@ end)
 test("partition: incoming is highest slot first (slot 0 bottom-right); keep follows order", function()
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
   eq(Picture(bag), "5 4 3 2 1 0 | 6 7 8")
-  S.MoveBefore(bag.store.list[1], 8, 6)
+  S.MoveBefore(bag.store, 8, 6)
   eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7", "visual reorder, no physical move")
 end)
 
-test("reconcile: legacy itemID store becomes an empty Keep at the top; bad boundary repaired", function()
+test("reconcile: legacy stores become an empty Keep at the top; unclaimed keep slots join group 1", function()
   local legacy = { nextID = 2, list = { { id = "s1", name = "Keep", items = { [6948] = true } } } }
   local st = S.Reconcile(legacy, 10)
-  eq(st.list[1].boundary, 10); eq(#st.list[1].order, 0)
-  local st2 = S.Reconcile({ nextID = 2, list = { { id = "s1", boundary = 7, order = { 7 } } } }, 10)
-  eq(#st2.list[1].order, 3, "order rebuilt to match range 7..9")
+  eq(st.boundary, 10); eq(#st.list[1].order, 0)
+  local perSection = { nextID = 2, list = { { id = "s1", boundary = 7, order = { 7 } } } }   -- D11-era shape
+  eq(S.Reconcile(perSection, 10).boundary, 10, "no store-level boundary -> fresh")
+  local st2 = S.Reconcile({ nextID = 2, boundary = 7, list = { { id = "s1", order = { 7 } } } }, 10)
+  eq(#st2.list[1].order, 3, "slots 8,9 unclaimed -> appended to group 1")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -111,7 +113,7 @@ test("drop kept (slot 7) onto EMPTY incoming slot 2: 7->2, lowest keep slot 6 sl
   ok(bag:Pickup(bag.slots[8]))                  -- slot 7
   ok(bag:Drop(Cell(bag, 2)))
   eq(Picture(bag), "_ 5 4 3 7 1 0 | 6 8", "slot 6 released EMPTY at top-left; item 6 slid up into slot 7; nothing else moved")
-  eq(bag.store.list[1].boundary, 7)
+  eq(bag.store.boundary, 7)
   eq(bag.slots[3].item.itemID, 107, "item 7 physically in slot 2")
   eq(bag.slots[8].item.itemID, 106, "item 6 physically in slot 7"); ok(bag.slots[7].item == nil, "slot 6 empty")
 end)
@@ -121,7 +123,7 @@ test("drop kept onto OCCUPIED incoming: plain swap, the displaced item is now ke
   ok(bag:Pickup(bag.slots[8]))                  -- item 7 at slot 7
   ok(bag:Drop(Cell(bag, 2)))
   eq(Picture(bag), "5 4 3 7 1 0 | 6 2 8")
-  eq(bag.store.list[1].boundary, 6, "boundary unchanged")
+  eq(bag.store.boundary, 6, "boundary unchanged")
 end)
 
 test("pin loose onto lock: swap into boundary-1 then grow; new item sits right of the lock", function()
@@ -130,7 +132,7 @@ test("pin loose onto lock: swap into boundary-1 then grow; new item sits right o
   ok(bag:Drop(LockCell(bag)))
   -- 2<->5 swap, boundary 6->5: incoming (slots 4..0) reads 4 3 5 1 0 ; keep = new(5) first
   eq(Picture(bag), "4 3 5 1 0 | 2 6 7 8")
-  eq(bag.store.list[1].boundary, 5)
+  eq(bag.store.boundary, 5)
 end)
 
 test("pin the item already at boundary-1: zero moves", function()

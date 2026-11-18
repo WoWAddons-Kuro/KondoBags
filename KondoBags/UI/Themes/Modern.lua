@@ -5,6 +5,7 @@ local _, ns = ...
 ns.Theme.Register({
   id = "modern",
   cell = { size = 36, pitchX = 40, pitchY = 40, iconInset = 2 },
+  sectionGapRows = 3,    -- gap between runs (incoming/groups) = 3x the normal inter-row gap
   frame = { padLeft = 10, padRight = 10, padTop = 8, padBottom = 8 },
   titleHeight = 44,
   footerHeight = 20,

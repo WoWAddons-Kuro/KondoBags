@@ -107,6 +107,24 @@ local function CreateWindow(theme)
   end)
   frame.Search:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
 
+  -- "+" right of the search box: adds a new empty keep group below the last (D12).
+  frame.AddGroup = CreateFrame("Button", "KondoBagsAddGroupButton", frame)
+  frame.AddGroup:SetSize(22, 22)
+  frame.AddGroup:SetFrameLevel(frame:GetFrameLevel() + 10)
+  frame.AddGroup:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+  frame.AddGroup:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
+  frame.AddGroup:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
+  frame.AddGroup:SetScript("OnClick", function()
+    if view.bag then view.bag:AddGroup("") end
+  end)
+  frame.AddGroup:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("New keep row", 1, 1, 1)
+    GameTooltip:AddLine("Adds another row with its own lock. Drop items on the lock to keep them there.", 0.8, 0.8, 0.8, true)
+    GameTooltip:Show()
+  end)
+  frame.AddGroup:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
   -- Footer bar and money sit on their own frame that ignores the window's alpha, so a translucent
   -- panel background never fades the money text or the bar's border.
   frame.Footer = CreateFrame("Frame", nil, frame, BackdropTemplateMixin and "BackdropTemplate" or nil)
@@ -340,7 +358,21 @@ function Window.Render()
 
   local layout = bag:Layout()
   local rows = math.max(1, #layout.rows)
+  -- Vertical placement per row. A run boundary (incoming -> group, group -> group) gets a gap of
+  -- theme.sectionGapRows times the normal inter-row gap (owner: 3x), so groups read as groups.
+  local rowGap = theme.cell.pitchY - theme.cell.size
+  local sectionGap = (theme.sectionGapRows or 3) * rowGap
+  local rowY, extraH = {}, 0
+  local y = 0
+  for r, row in ipairs(layout.rows) do
+    if r > 1 and row.sectionID ~= layout.rows[r - 1].sectionID then
+      y = y - (sectionGap - rowGap); extraH = extraH + (sectionGap - rowGap)
+    end
+    rowY[r] = y
+    y = y - theme.cell.pitchY
+  end
   local w, h = Theme.WindowSize(theme, bag.columns, rows)
+  h = h + extraH
   frame:SetSize(w, h)
 
   local f = theme.frame
@@ -349,13 +381,15 @@ function Window.Render()
   local searchTop = f.padTop + (theme.searchTopGap or (theme.titleHeight - searchH) / 2)
   frame.Grid:ClearAllPoints()
   frame.Grid:SetPoint("TOPLEFT", f.padLeft, -(f.padTop + theme.titleHeight))
-  frame.Grid:SetSize(w - f.padLeft - f.padRight, rows * theme.cell.pitchY)
+  frame.Grid:SetSize(w - f.padLeft - f.padRight, rows * theme.cell.pitchY + extraH)
 
   local gridW = w - f.padLeft - f.padRight
   frame.Search:ClearAllPoints()
   frame.Search:SetHeight(searchH)
   frame.Search:SetWidth(gridW * (theme.searchWidthScale or 1) - 8)
   frame.Search:SetPoint("TOP", frame, "TOP", 0, -searchTop)
+  frame.AddGroup:ClearAllPoints()
+  frame.AddGroup:SetPoint("LEFT", frame.Search, "RIGHT", 6, 0)
 
   frame.Money:ClearAllPoints()
   if theme.moneyFont then frame.Money:SetFontObject(theme.moneyFont) end
@@ -379,14 +413,14 @@ function Window.Render()
 
   local ci = 0
   for r, row in ipairs(layout.rows) do
-    local y = -((r - 1) * theme.cell.pitchY)
+    local cellY = rowY[r]
     for _, cell in ipairs(row.cells) do
       ci = ci + 1
       local b = cells[ci]
       if not b then b = NewCell(ci); cells[ci] = b end
       DressCell(b, cell, theme)
       b:ClearAllPoints()
-      b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (cell.col - 1) * theme.cell.pitchX, y)
+      b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (cell.col - 1) * theme.cell.pitchX, cellY)
       b:Show()
     end
   end

@@ -163,9 +163,11 @@ end
 
 -- Pin a LOOSE held item into `section` (visually before `beforeRef`, or first). Physical: section
 -- grows by taking slot boundary-1; the item is swapped there if it is not there already (D11).
-local function PinHeld(self, held, section, beforeRef)
+-- Pin a LOOSE held item into `group` (visually before `beforeRef`, or first). Physical (D11): the
+-- keep range grows by taking slot boundary-1; one swap brings the item there unless already there.
+local function PinHeld(self, held, group, beforeRef)
   local beforeSlot = beforeRef and beforeRef.slotIndex or nil
-  local moves = Sections.PinFromIncoming(self.store, section, held.slotIndex, beforeSlot)
+  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, beforeSlot)
   self:ApplyMoves(moves)
 end
 
@@ -173,58 +175,56 @@ end
 function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
-  local heldSec = self:SectionOfRef(held)
+  local heldKept = Sections.IsKept(self.store, held.slotIndex)
   local function done() self.held = nil; ResetInsertPoint(self); self:Emit("changed"); return true end
 
-  -- Section targets: lock cell, Shift phantom, or any section cell while Shift is down.
-  local targetSec = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
+  -- Group targets: lock cell, Shift phantom, or any group cell while Shift is down (D12: all groups
+  -- share ONE physical keep range, so any group can be pinned into or reordered across).
+  local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
   local insertCell = cell.kind == Layout.CELL_INSERT
-  if targetSec and (cell.kind == Layout.CELL_DROP or insertCell or self.insertMode) then
+  if targetGroup and (cell.kind == Layout.CELL_DROP or insertCell or self.insertMode) then
     local point = insertCell and { beforeRef = cell.beforeRef }
       or (self.insertMode and self:InsertPoint()) or { beforeRef = nil }
     if cell.kind == Layout.CELL_SLOT and not self.insertMode then point = { beforeRef = cell.ref } end
-    if heldSec == targetSec then
-      -- reorder within the section (no physical move)
-      if point.beforeRef then Sections.MoveBefore(targetSec, held.slotIndex, point.beforeRef.slotIndex)
-      else Sections.MoveToEnd(targetSec, held.slotIndex) end
-      return done()
-    elseif heldSec == nil then
-      -- M0: only the lowest section can grow (it borders incoming)
-      if targetSec ~= self.store.list[1] then return false end
-      PinHeld(self, held, targetSec, point.beforeRef)
+    if heldKept then
+      -- kept -> a group spot: visual move only (within or across groups)
+      if point.beforeRef then Sections.MoveBefore(self.store, held.slotIndex, point.beforeRef.slotIndex)
+      else Sections.MoveToEnd(self.store, targetGroup, held.slotIndex) end
       return done()
     end
-    return false   -- section-to-section moves: not in M0
+    PinHeld(self, held, targetGroup, point.beforeRef)
+    return done()
   end
 
   if cell.kind ~= Layout.CELL_SLOT or not cell.ref then return false end
   local target = cell.ref
   if target == held then return done() end
+  local targetKept = Sections.IsKept(self.store, target.slotIndex)
 
-  if targetSec and heldSec == targetSec then
-    -- kept onto kept, same section, no Shift: take its visual position
-    Sections.MoveBefore(targetSec, held.slotIndex, target.slotIndex)
+  if heldKept and targetKept then
+    -- kept onto kept, no Shift: take its visual position (any group)
+    Sections.MoveBefore(self.store, held.slotIndex, target.slotIndex)
     return done()
   end
 
-  if heldSec and not targetSec then
-    -- kept -> incoming: leaves the section (D11 UnpinToIncoming; <= 2 moves)
-    if heldSec ~= self.store.list[1] then return false end   -- M0: only the lowest section borders incoming
-    local moves = Sections.UnpinToIncoming(heldSec, held.slotIndex, target.slotIndex, target.item ~= nil)
+  if heldKept and not targetKept then
+    -- kept -> incoming: leaves keep (D11 UnpinToIncoming; <= 2 moves)
+    local moves = Sections.UnpinToIncoming(self.store, held.slotIndex, target.slotIndex, target.item ~= nil)
     self:ApplyMoves(moves)
     return done()
   end
 
-  if not heldSec and targetSec then
-    -- loose -> onto a kept item (no Shift): stock swap. Membership is by slot, so the loose item is
-    -- now kept in that visual position and the kept one is loose where the held one was.
-    self:ApplyMoves({ { from = held.slotIndex, to = target.slotIndex } })
-    return done()
-  end
-
-  -- loose <-> loose: stock swap / place
+  -- loose onto kept (stock swap: the loose item is now kept in that visual spot, the kept one is
+  -- loose where the held one was) or loose <-> loose: stock swap / place
   self:ApplyMoves({ { from = held.slotIndex, to = target.slotIndex } })
   return done()
+end
+
+-- The + button: a new empty group drawn after the existing ones.
+function BagState:AddGroup(name)
+  local g = Sections.Create(self.store, name)
+  self:Emit("changed")
+  return g
 end
 
 return BagState

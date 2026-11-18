@@ -1,28 +1,23 @@
--- KondoBags Core/Sections.lua -- pure Lua. The section MODEL: sections as PHYSICAL slot ranges (SPECS/00 D11).
+-- KondoBags Core/Sections.lua -- pure Lua. The section MODEL (SPECS/00 D11 + D12).
 --
 -- No WoW API. Runs under stock Lua 5.1 (spec/run.lua) and in game alike.
 --
--- The bag is a flat list of KondoBags_SlotIndex 0..N-1 in Blizzard's combined order. Sections cut it
--- into contiguous ranges, bottom-up from the TOP slot:
+-- PHYSICALLY there are exactly two ranges in the flat combined bag (slots 0..N-1, Blizzard order):
+--   incoming = slots 0 .. boundary-1      Blizzard's loot order; never reordered by us
+--   keep     = slots boundary .. N-1      always fully OCCUPIED, so loot never lands here
+-- One boundary. Pin = grow keep by taking slot boundary-1 (one swap brings the item). Unpin = the
+-- item leaves to an incoming slot; the hole is filled from keep's LOWEST slot, which is released.
 --
---   incoming  = slots 0 .. list[1].boundary-1          (Blizzard's loot order; never reordered by us)
---   list[1]   = slots list[1].boundary .. list[2].boundary-1
---   list[k]   = slots list[k].boundary .. N-1            (last section runs to the end)
+-- VISUALLY the keep range is drawn as one or more GROUPS, each with its own lock cell. A group is a
+-- named list of keep slots in display order; the groups together partition boundary..N-1.
 --
--- Every section slot is always OCCUPIED (a section is exactly as big as its item count), so loot
--- never lands in one and a section's physical slot order is free. Its VISUAL order is `order`, a
--- list of its slot indices. Membership is BY SLOT, not by item: moving an item into the range pins it.
---
---   KondoBags_SectionStore = { nextID = number, list = { KondoBags_Section... } }   -- persisted per character
---   KondoBags_Section      = { id = KondoBags_SectionID, name = string,
---                              boundary = KondoBags_SlotIndex,        -- lowest slot this section owns
+--   KondoBags_SectionStore = { nextID = number, boundary = KondoBags_SlotIndex,
+--                              list = { KondoBags_Group... } }        -- display order, incoming first
+--   KondoBags_Group        = { id = KondoBags_SectionID, name = string,
 --                              order = { KondoBags_SlotIndex... } }  -- visual order, left to right from the lock
 --   KondoBags_SectionID    = string, "s<n>", never reused
 --   KondoBags_SlotIndex    = number, 0-based position in the flat combined bag
---
--- Edits are expressed as KondoBags_SlotMove = { from = KondoBags_SlotIndex, to = KondoBags_SlotIndex }
--- (a swap of the two slots' contents). The controller applies them to the mock or, in M4, issues
--- C_Container.PickupContainerItem pairs.
+--   KondoBags_SlotMove     = { from = KondoBags_SlotIndex, to = KondoBags_SlotIndex }   -- a swap
 
 local _, ns = ...
 ns = ns or {}
@@ -36,145 +31,148 @@ Sections.DEFAULT_KEEP_NAME = "Keep"
 -- store
 -- ---------------------------------------------------------------------------
 
--- A fresh store with one empty "Keep" section at the very top of a bag of `slotCount` slots.
--- The owner pins Hearthstone into it on first run (needs the slot list, so not done here).
+-- A fresh store: empty keep range at the very top, one empty "Keep" group.
 function Sections.NewStore(slotCount)
-  local store = { nextID = 1, list = {} }
-  Sections.Create(store, slotCount, Sections.DEFAULT_KEEP_NAME)
+  local store = { nextID = 1, boundary = slotCount, list = {} }
+  Sections.Create(store, Sections.DEFAULT_KEEP_NAME)
   return store
 end
 
--- Create an EMPTY section whose range starts at `boundary` (= slotCount for a section at the end).
-function Sections.Create(store, boundary, name)
+-- Add an EMPTY group (drawn after the existing ones). The + button.
+function Sections.Create(store, name)
   local id = "s" .. store.nextID
   store.nextID = store.nextID + 1
-  local section = { id = id, name = name or "", boundary = boundary, order = {} }
-  store.list[#store.list + 1] = section
-  return section
+  local group = { id = id, name = name or "", order = {} }
+  store.list[#store.list + 1] = group
+  return group
 end
 
 function Sections.Find(store, sectionID)
-  for i, s in ipairs(store.list) do
-    if s.id == sectionID then return s, i end
+  for i, g in ipairs(store.list) do
+    if g.id == sectionID then return g, i end
   end
   return nil
 end
 
--- The section owning `slot`, or nil if it is incoming.
-function Sections.SectionOfSlot(store, slot)
-  local owner
-  for _, s in ipairs(store.list) do
-    if slot >= s.boundary then owner = s end   -- list is bottom-up, so the last match wins
+function Sections.IsKept(store, slot) return slot >= store.boundary end
+
+-- The group whose order names `slot`, or nil (incoming, or a kept slot no group claims yet).
+function Sections.GroupOfSlot(store, slot)
+  for _, g in ipairs(store.list) do
+    for _, s in ipairs(g.order) do if s == slot then return g end end
   end
-  return owner
+  return nil
+end
+-- Back-compat name used by the controller/view.
+Sections.SectionOfSlot = function(store, slot)
+  if not Sections.IsKept(store, slot) then return nil end
+  return Sections.GroupOfSlot(store, slot) or store.list[1]
 end
 
--- Incoming is everything below the first section (or all of it when there are no sections).
-function Sections.IncomingEnd(store, slotCount)
-  local first = store.list[1]
-  return first and first.boundary or slotCount
-end
+function Sections.IncomingEnd(store) return store.boundary end
+function Sections.ItemCount(group) return #group.order end
 
-function Sections.ItemCount(section) return #section.order end
-
-local function IndexInOrder(section, slot)
-  for i, s in ipairs(section.order) do if s == slot then return i end end
+local function IndexInOrder(group, slot)
+  for i, s in ipairs(group.order) do if s == slot then return i end end
   return nil
 end
 
--- After a swap of two slots, any `order` entry naming one of them must name the other.
+-- After a swap of two slots, any order entry naming one of them must name the other.
 local function RenameSlotInOrders(store, a, b)
-  for _, s in ipairs(store.list) do
-    for i, slot in ipairs(s.order) do
-      if slot == a then s.order[i] = b elseif slot == b then s.order[i] = a end
+  for _, g in ipairs(store.list) do
+    for i, slot in ipairs(g.order) do
+      if slot == a then g.order[i] = b elseif slot == b then g.order[i] = a end
     end
   end
 end
 
+local function RemoveSlotFromOrders(store, slot)
+  for _, g in ipairs(store.list) do
+    local i = IndexInOrder(g, slot)
+    if i then table.remove(g.order, i) end
+  end
+end
+
 -- ---------------------------------------------------------------------------
--- gestures -> moves  (each returns { KondoBags_SlotMove... } already applied to the store's
--- bookkeeping; the caller applies the same moves to the slot contents)
+-- gestures -> moves  (each returns { KondoBags_SlotMove... }; bookkeeping already updated;
+-- the caller applies the same moves to the slot contents)
 -- ---------------------------------------------------------------------------
 
--- Grow `section` by one slot at its bottom and put the item from `fromSlot` (incoming) there.
--- Visual: the new item goes FIRST in `order` (right of the lock), or before `beforeSlot` if given.
--- The section takes slot boundary-1; if the item is not already there, one swap brings it.
--- (Any section BELOW this one would have to shrink -- only the lowest section can grow in M0.)
-function Sections.PinFromIncoming(store, section, fromSlot, beforeSlot)
+-- Pin the item at incoming `fromSlot` into `group`, visually BEFORE `beforeSlot` (nil = first).
+-- Keep grows by taking slot boundary-1; one swap brings the item there unless it is there already.
+function Sections.PinFromIncoming(store, group, fromSlot, beforeSlot)
   local moves = {}
-  local target = section.boundary - 1
+  local target = store.boundary - 1
   if fromSlot ~= target then
     moves[#moves + 1] = { from = fromSlot, to = target }
-    RenameSlotInOrders(store, fromSlot, target)   -- no section names either slot today, but keep it honest
+    RenameSlotInOrders(store, fromSlot, target)
   end
-  section.boundary = target
-  local at = beforeSlot and IndexInOrder(section, beforeSlot) or 1
-  table.insert(section.order, at, target)
+  store.boundary = target
+  local at = beforeSlot and IndexInOrder(group, beforeSlot) or 1
+  table.insert(group.order, at, target)
   return moves
 end
 
--- Shrink `section` by one: the item at `slot` (inside the section) leaves to incoming slot `toSlot`.
---   toSlot occupied -> plain swap; the displaced item is now in the section, takes `slot`'s place in order.
---   toSlot empty    -> move; the hole left at `slot` is filled from the section's LOWEST slot
---                      (boundary), which is then released to incoming. At most two moves, no cascade.
-function Sections.UnpinToIncoming(section, slot, toSlot, toSlotOccupied)
+-- Unpin: the kept item at `slot` leaves to incoming slot `toSlot`.
+--   toSlot occupied -> plain swap; the displaced item is now kept in `slot`, same visual spot.
+--   toSlot empty    -> move; the hole at `slot` is filled from keep's LOWEST slot (boundary), which
+--                      is then released to incoming. The slid item keeps its group (rename).
+function Sections.UnpinToIncoming(store, slot, toSlot, toSlotOccupied)
   local moves = { { from = slot, to = toSlot } }
-  if toSlotOccupied then
-    -- membership is by slot: whatever came back into `slot` is now kept, same visual position
-    return moves
-  end
-  local idx = IndexInOrder(section, slot)
-  if idx then table.remove(section.order, idx) end
-  local low = section.boundary
+  if toSlotOccupied then return moves end
+  RemoveSlotFromOrders(store, slot)
+  local low = store.boundary
   if slot ~= low then
-    moves[#moves + 1] = { from = low, to = slot }   -- the lowest-slot item slides into the hole
-    local lowIdx = IndexInOrder(section, low)
-    if lowIdx then section.order[lowIdx] = slot end
+    moves[#moves + 1] = { from = low, to = slot }
+    RenameSlotInOrders(store, low, slot)     -- whichever group held `low` now holds `slot`
   end
-  section.boundary = low + 1                        -- slot `low` is incoming again (and empty)
+  store.boundary = low + 1
   return moves
 end
 
--- Reorder inside a section: `slot` takes the visual position of `otherSlot`. No physical move.
-function Sections.MoveBefore(section, slot, otherSlot)
+-- Move a kept `slot` to right before `otherSlot` (any group; moves between groups too). Visual only.
+function Sections.MoveBefore(store, slot, otherSlot)
   if slot == otherSlot then return false end
-  local i, j = IndexInOrder(section, slot), IndexInOrder(section, otherSlot)
-  if not i or not j then return false end
-  table.remove(section.order, i)
-  j = IndexInOrder(section, otherSlot)
-  table.insert(section.order, j, slot)
+  local target = Sections.GroupOfSlot(store, otherSlot)
+  if not target then return false end
+  RemoveSlotFromOrders(store, slot)
+  table.insert(target.order, IndexInOrder(target, otherSlot), slot)
   return true
 end
 
-function Sections.MoveToEnd(section, slot)
-  local i = IndexInOrder(section, slot)
-  if not i or i == #section.order then return false end
-  table.remove(section.order, i)
-  section.order[#section.order + 1] = slot
+-- Move a kept `slot` to the end of `group`. Visual only.
+function Sections.MoveToEnd(store, group, slot)
+  if group.order[#group.order] == slot then return false end
+  RemoveSlotFromOrders(store, slot)
+  group.order[#group.order + 1] = slot
   return true
 end
 
--- Two slots in the same section swapped physically (e.g. a stock drag): keep `order` pointing at the items.
-function Sections.NoteSwapWithin(store, a, b)
-  RenameSlotInOrders(store, a, b)
+function Sections.NoteSwapWithin(store, a, b) RenameSlotInOrders(store, a, b) end
+
+-- Remove a group; its slots join the previous group (or the next if it was first). Needs >= 2 groups.
+function Sections.Dissolve(store, sectionID)
+  local g, i = Sections.Find(store, sectionID)
+  if not g or #store.list < 2 then return false end
+  local sink = store.list[i - 1] or store.list[i + 1]
+  for _, s in ipairs(g.order) do sink.order[#sink.order + 1] = s end
+  table.remove(store.list, i)
+  return true
 end
 
 -- ---------------------------------------------------------------------------
 -- partition for the layout
 -- ---------------------------------------------------------------------------
 
--- `slots` is { KondoBags_SlotRef... } indexed 1..N in combined order (slot index = i-1).
--- Incoming comes out HIGHEST slot first so that slot 0 is the bottom-right anchor and new loot
--- (lowest free slot) opens a new cell at the top-left without moving anything else.
+-- `slots` is { KondoBags_SlotRef... } indexed 1..N (slot index = i-1). Incoming comes out HIGHEST slot
+-- first (slot 0 is the bottom-right anchor, new loot opens a cell top-left). Then every group.
 function Sections.Partition(store, slots, columns)
-  local n = #slots
-  local incomingEnd = Sections.IncomingEnd(store, n)
   local loose = {}
-  for i = incomingEnd, 1, -1 do loose[#loose + 1] = slots[i] end   -- slot incomingEnd-1 .. 0
+  for i = store.boundary, 1, -1 do loose[#loose + 1] = slots[i] end
   local sections = {}
-  for _, s in ipairs(store.list) do
-    local sec = { id = s.id, name = s.name, slots = {} }
-    for _, slot in ipairs(s.order) do
+  for _, g in ipairs(store.list) do
+    local sec = { id = g.id, name = g.name, slots = {} }
+    for _, slot in ipairs(g.order) do
       local ref = slots[slot + 1]
       if ref then sec.slots[#sec.slots + 1] = ref end
     end
@@ -183,34 +181,32 @@ function Sections.Partition(store, slots, columns)
   return { columns = columns, loose = loose, sections = sections }
 end
 
--- Validate/repair a saved store against the current slot count (bag resized, old format, etc.).
--- Returns the store (possibly replaced). A section whose order does not match its range is rebuilt.
+-- Validate/repair a saved store against the current bag. Enforces: boundary in range; every keep
+-- slot OCCUPIED (a range reaching into empty slots is cut back); every keep slot named by exactly one
+-- group (stray/duplicate entries dropped, unclaimed slots appended to the first group); >= 1 group.
+-- Stores from before D12 (per-section boundary / per-item sets) collapse to an empty keep.
 function Sections.Reconcile(store, slotCount, slots)
-  if type(store) ~= "table" or type(store.list) ~= "table" then return Sections.NewStore(slotCount) end
-  -- D11 invariant: every section slot is OCCUPIED. With `slots` we enforce it: a saved range that
-  -- reaches down into empty slots is cut back to its occupied top, so stale stores never draw empty
-  -- cells inside a section. Without `slots` (tests of pure bookkeeping) ranges are trusted.
+  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.boundary) ~= "number" then
+    return Sections.NewStore(slotCount)
+  end
   local function occupied(slot) return not slots or (slots[slot + 1] ~= nil and slots[slot + 1].item ~= nil) end
-  local top = slotCount
-  for i = #store.list, 1, -1 do
-    local s = store.list[i]
-    if type(s.boundary) ~= "number" or s.boundary > top or s.boundary < 0 then
-      -- legacy (itemID-based) or out-of-range: collapse to empty at the top
-      s.boundary, s.order = top, {}
+  local b = math.max(0, math.min(slotCount, store.boundary))
+  local low = slotCount
+  while low > b and occupied(low - 1) do low = low - 1 end
+  store.boundary = low
+  if #store.list == 0 then Sections.Create(store, Sections.DEFAULT_KEEP_NAME) end
+  local claimed = {}
+  for _, g in ipairs(store.list) do
+    local order = {}
+    for _, slot in ipairs(g.order or {}) do
+      if type(slot) == "number" and slot >= store.boundary and slot < slotCount and not claimed[slot] then
+        order[#order + 1] = slot; claimed[slot] = true
+      end
     end
-    local low = top
-    while low > s.boundary and occupied(low - 1) do low = low - 1 end
-    s.boundary = low
-    local want = top - s.boundary
-    -- keep the saved visual order where it still names slots in range; append any missing
-    local seen, order = {}, {}
-    for _, slot in ipairs(s.order or {}) do
-      if slot >= s.boundary and slot < top and not seen[slot] then order[#order + 1] = slot; seen[slot] = true end
-    end
-    for slot = s.boundary, top - 1 do if not seen[slot] then order[#order + 1] = slot end end
-    s.order = order
-    assert(#s.order == want)
-    top = s.boundary
+    g.order = order
+  end
+  for slot = store.boundary, slotCount - 1 do
+    if not claimed[slot] then local g = store.list[1]; g.order[#g.order + 1] = slot end
   end
   return store
 end

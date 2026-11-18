@@ -18,14 +18,13 @@ local function InitDB()
   -- Sections live per character (SPECS/00 D2). Mock sections are kept apart so play data is never
   -- polluted by the mockup.
   local store = KondoBagsCharDB.mockSections
-  -- Stores from builds before D11 (physical slot ranges) carry itemID sets instead of a boundary;
-  -- Reconcile collapses those to an empty Keep. A missing/empty store becomes the default:
-  -- one Keep section whose range is just the top slot (the mock's hearthstone).
+  -- D12 store: ONE keep-wide boundary plus visual groups. Stores from earlier builds (per-item sets,
+  -- or a per-section boundary) have no store.boundary and are replaced. A fresh store keeps just the
+  -- top slot (the mock's hearthstone) in the default Keep group.
   local slotCount = #ns.Mock.Slots()
-  if type(store) ~= "table" or type(store.list) ~= "table" or #store.list == 0
-     or type(store.list[1].boundary) ~= "number" then
+  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.boundary) ~= "number" then
     store = ns.Sections.NewStore(slotCount)
-    store.list[1].boundary = slotCount - 1
+    store.boundary = slotCount - 1
     store.list[1].order = { slotCount - 1 }
     KondoBagsCharDB.mockSections = store
   end
