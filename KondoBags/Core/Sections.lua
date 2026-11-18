@@ -6,7 +6,7 @@
 --     nextID = number,
 --     list   = { KondoBags_Section... },  -- display order
 --   }
---   KondoBags_Section   = { id = KondoBags_SectionID, name = string, items = { [itemID] = true } }
+--   KondoBags_Section   = { id = KondoBags_SectionID, name = string, items = { [itemID] = true }, order = { itemID... } }   -- order = pin order, newest LAST
 --   KondoBags_SectionID = string, "s<n>", never reused
 --
 -- A new character starts with one section, "Keep", holding Hearthstone (SPECS/00). Users can add
@@ -22,18 +22,31 @@ Sections.DEFAULT_KEEP_NAME = "Keep"
 
 function Sections.NewStore()
   local store = { nextID = 1, list = {} }
-  local keep = Sections.Create(store, nil, Sections.DEFAULT_KEEP_NAME)
-  keep.items[Sections.HEARTHSTONE_ID] = true
+  Sections.Create(store, Sections.HEARTHSTONE_ID, Sections.DEFAULT_KEEP_NAME)
   return store
 end
 
 function Sections.Create(store, itemID, name)
   local id = "s" .. store.nextID
   store.nextID = store.nextID + 1
-  local section = { id = id, name = name or "", items = {} }
-  if itemID then section.items[itemID] = true end
+  local section = { id = id, name = name or "", items = {}, order = {} }
+  if itemID then section.items[itemID] = true; section.order[1] = itemID end
   store.list[#store.list + 1] = section
   return section
+end
+
+local function RemoveFromOrder(section, itemID)
+  for i, id in ipairs(section.order) do
+    if id == itemID then table.remove(section.order, i); return end
+  end
+end
+
+-- Saved stores from before `order` existed: rebuild it from membership (arbitrary but stable).
+local function EnsureOrder(section)
+  if section.order then return end
+  section.order = {}
+  for id in pairs(section.items) do section.order[#section.order + 1] = id end
+  table.sort(section.order)
 end
 
 function Sections.Find(store, sectionID)
@@ -48,17 +61,20 @@ function Sections.Pin(store, sectionID, itemID)
   local target = Sections.Find(store, sectionID)
   if not target or not itemID then return false end
   for _, s in ipairs(store.list) do
-    if s ~= target then s.items[itemID] = nil end
+    EnsureOrder(s)
+    if s ~= target and s.items[itemID] then s.items[itemID] = nil; RemoveFromOrder(s, itemID) end
   end
   if target.items[itemID] then return false end
   target.items[itemID] = true
+  target.order[#target.order + 1] = itemID
   return true
 end
 
 function Sections.Unpin(store, itemID)
   local changed = false
   for _, s in ipairs(store.list) do
-    if s.items[itemID] then s.items[itemID] = nil; changed = true end
+    EnsureOrder(s)
+    if s.items[itemID] then s.items[itemID] = nil; RemoveFromOrder(s, itemID); changed = true end
   end
   return changed
 end
@@ -94,21 +110,32 @@ function Sections.Dissolve(store, sectionID)
 end
 
 -- Split a flat slot list (bag order) into a KondoBags_LayoutInput (see Core/Layout.lua).
+-- Section slots come out in PIN order (newest last), so a just-dropped item sits right after the
+-- lock cell; several stacks of the same itemID keep bag order among themselves.
 function Sections.Partition(store, slots, columns)
-  local byID, sections = {}, {}
+  local byID, sections, pending = {}, {}, {}
   for _, s in ipairs(store.list) do
+    EnsureOrder(s)
     local sec = { id = s.id, name = s.name, slots = {} }
     sections[#sections + 1] = sec
     byID[s.id] = sec
+    pending[s.id] = {}          -- itemID -> { refs in bag order }
   end
   local loose = {}
   for _, ref in ipairs(slots) do
     local owner = ref.item and Sections.SectionOf(store, ref.item.itemID)
     if owner then
-      local sec = byID[owner.id]
-      sec.slots[#sec.slots + 1] = ref
+      local bucket = pending[owner.id]
+      bucket[ref.item.itemID] = bucket[ref.item.itemID] or {}
+      table.insert(bucket[ref.item.itemID], ref)
     else
       loose[#loose + 1] = ref
+    end
+  end
+  for _, s in ipairs(store.list) do
+    local sec, bucket = byID[s.id], pending[s.id]
+    for _, itemID in ipairs(s.order) do
+      for _, ref in ipairs(bucket[itemID] or {}) do sec.slots[#sec.slots + 1] = ref end
     end
   end
   return { columns = columns, loose = loose, sections = sections }
