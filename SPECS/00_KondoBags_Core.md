@@ -41,6 +41,7 @@ The design goal is the smallest possible configuration surface and the least ado
 | D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner, 2026-11-17, after seeing headers, `+` cell and handle cell in game: too gaudy. |
 | D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. Replaces Draft 3's logical per-itemID pins. |
 | D12 | **One physical Keep range, many visual groups.** Physically there are exactly two ranges: incoming (`0 .. boundary-1`) and Keep (`boundary .. N-1`), with ONE boundary and the D11 grow/shrink rule. The UI "sections" below incoming are **groups**: named lists of Keep slots (`{ id, name, order }`) that together partition the Keep range. A `+` button (right of the search box) adds a new empty group drawn below the last. Dropping on group G's lock pins via D11 and records the new slot in `G.order`. When a shrink slides the lowest-slot item into a hole, the slot is renamed in whichever group's `order` held it, so visual membership follows the item. Incoming is always drawn first. | Owner, 2026-11-18, correcting the assistant's reading of "multiple sections" as multiple physical ranges. Keeps the loot invariant trivially (one boundary) and makes `+` a pure UI feature. |
+| D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; pinning SHIFTS incoming down (the one unavoidable incoming reshuffle); restricted bag types are extra incoming runs, no Keep for them; bag swaps move nothing because Keep positions are an indirection map. | Owner, 2026-11-18. Articulated after the D11/D12 iterations surfaced each edge case in play. |
 
 ## Architecture
 
@@ -262,11 +263,29 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 
 **Invariant on shrink.** When a section loses an item, the slot it gives back to incoming **must be its lowest-numbered slot** (`boundary`), because that is where Blizzard loots next and it must become the top of incoming's sequence. Since section slot order is free, this costs at most ONE extra physical swap, never a cascade.
 
+**Invariants (D13).** The slot model in four sentences; everything in the gesture table below follows from these.
+
+1. **Keep never has a free slot.** A section is exactly as large as its item count. Whenever a Keep slot would become free, the item from Keep's **lowest** slot slides into it and that lowest slot is released to incoming (D11 shrink). Loot can therefore never land inside Keep.
+2. **Pinning SHIFTS incoming down; it never swaps.** To land an item from incoming slot `f` in Keep, Keep claims slot `boundary-1`. Every incoming item above `f` steps down one slot (`f+1→f`, …, `boundary-1→boundary-2`) and the pinned item arrives at `boundary-1`. Incoming stays contiguous and in Blizzard's loot order. **This is the only time incoming items change visual position, and it is unavoidable**: the top incoming slot has to be vacated and a swap would drop the displaced item mid-incoming. Cost is `boundary-1-f` adjacent moves (one `PickupContainerItem` pair each in M4).
+3. **Restricted bag types are additional incoming runs.** Quiver, ammo, soul, herb, enchanting, keyring, reagent: each is its own incoming-style run keyed by slot kind, drawn with the same bottom-anchored rule. **No Keep for alternate bag types** (decision: no; revisit only if a real need appears). Only `general` slots participate in the Keep range.
+4. **Bag swaps move nothing.** Keep positions are an **indirection map** (`group.order` lists slot indices; the view resolves them at render). There is no stored mapping from a visual Keep position to a bag/slot pair, so equipping, unequipping or rearranging bags re-indexes the flat slot list and `Reconcile` re-validates the ranges; no items are moved and no visual position changes unless the slot count itself shrank below the Keep range.
+
+```
+ pin item at incoming slot 2 (boundary 6):     unpin kept item at slot 7 onto EMPTY incoming slot 2:
+   before   5 4 3 2 1 0 | 6 7 8                  before   5 4 3 _ 1 0 | 6 7 8
+   shift    3→2 4→3 5→4, item2→5                 move     7→2 ; hole at 7 ; 6→7 ; slot 6 released
+   after    5 4 3 1 0 | 2 6 7 8   (boundary 5)   after    _ 5 4 3 2 1 0 | 7 8   (boundary 7)
+   (incoming order 5 4 3 1 0 preserved; the      (incoming order preserved; the freed slot is the
+    gap at 2 closed by the shift)                  top-left one, where Blizzard loots next)
+```
+
+Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`): the cell drawn under the mouse while an item is carried with Shift down, anchored to the kept item that was hovered (`anchorRef`; nil = the lock). The gap takes the anchor's column and the anchor slides one cell left, which on a right-aligned row is exactly what puts the gap under a mouse that was over the anchor. It opens where the mouse is and does not move until the mouse enters a cell naming a different anchor.
+
 | Gesture | Physical moves (`PickupContainerItem` pairs in M4; table swaps in the mock) | Visual result |
 |---|---|---|
 | Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
 | Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
-| Drop loose `l` (slot `s_l`) on a section's **lock cell** | if `s_l == boundary-1`: none; else swap `s_l ↔ boundary-1`; `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. **Nuance (open):** if `boundary-1` was occupied by some other loose item, that item is now at `s_l`'s cell — one visual swap inside incoming. Accepted unless the owner objects |
+| Drop loose `l` (slot `s_l`) on a section's **lock cell** | **shift**: for `s = s_l .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order with the gap at `s_l` closed (D13.2). Zero moves if `s_l == boundary-1`. *(Supersedes the earlier single-swap rule, which dropped the displaced item mid-incoming.)* |
 | Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
 | **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
 | Loose on loose / empty | stock swap/place | stock |
