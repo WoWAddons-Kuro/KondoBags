@@ -1,8 +1,8 @@
-# SPEC 00 — KondoBags core: fixed-section bag addon and the Toss line
+# SPEC 00 — KondoBags core: sectioned bag addon
 
-- **Status:** Draft 2 (2026-11-17) — revised from the original BagAddon draft with the decisions in "Decisions log".
+- **Status:** Draft 3 (2026-11-17) — revised from the original BagAddon draft with the decisions in "Decisions log".
 - **Name:** `KondoBags` (after Marie Kondo). Collision check done: none. Folder, TOC, SavedVariables and slash all use it.
-- **Not related to `GotJunk/`.** That is an earlier, separate addon in this workspace. KondoBags shares no code, data or dependency with it. Its widget therefore needs its own name — see Open Questions; `Toss line` is the placeholder used here.
+- **Not related to `GotJunk/`.** That is an earlier, separate addon in this workspace. KondoBags shares no code, data or dependency with it. Any junk-deletion widget is **out of scope** until the window is done (owner, 2026-11-17).
 - **Targets:** all current clients, with **Classic Era / Hardcore (interface 11509)** and **WoW: Forever (interface 16001)** as the clients we test on first. Cata/Mists/Retail get TOC lines and a clean provider seam, untested until later.
 - **Repo shape:** packager-style, addon one level down (`KondoBags/KondoBags/KondoBags.toc`), like `DragonToast_upstream`. `cmd\publish.cmd` discovers it via rule 2 (`D\X\X.toc`).
 
@@ -10,7 +10,7 @@ Milestones:
 
 - [ ] **M0 — UI mockup**: static in-game window from a fake snapshot, Edit Mode movable/scalable. No bag API, no data model. *Nothing in M1+ starts until the look is agreed.*
 - [ ] M1 — Dev loop, bag model and classifier core (tested off-client with `lua5.1`)
-- [ ] M2 — Toss line: always-visible cheapest-item line with click-to-delete
+- [ ] M2 — *(reserved; was a junk widget, deferred)*
 - [ ] M3 — Current-quest section (marked quest items plus items a logged quest requires)
 - [ ] M4 — Bag window live: five sections, secure buttons, restricted-slot strips, search, pins
 - [ ] M5 — Two themes: flat and classic
@@ -25,8 +25,6 @@ The mental model is **a person who organizes their own backpack**, not a bag aut
 
 The design goal is the smallest possible configuration surface and the least adornment. The complete settings list is in "Settings" and is meant to stay that short.
 
-The Toss line is the first shippable slice after the mockup: an always-visible line `[icon] x10 - 10c Worthless Sandals` showing the least valuable droppable stack; one click deletes it. It uses the same bag model and classifier as the window, so it proves the core on both clients before the window goes live.
-
 ## Decisions log
 
 | # | Decision | Rationale |
@@ -39,6 +37,8 @@ The Toss line is the first shippable slice after the mockup: an always-visible l
 | D6 | All flavours supported in TOC and seam; Era + Forever tested first | Owner priority. |
 | D7 | Tests run with `lua5.1` (installed: `C:\ProgramData\chocolatey\bin\lua5.1.exe`, `luacheck` also present) | Confirmed on this machine 2026-11-17. |
 | D8 | Libraries are **vendored** (unmodified, with `VENDORED.txt`), not git submodules | `publish.cmd` treats an empty submodule folder as missing and LibEditMode has no CurseForge zip to fall back on. |
+| D9 | **MVC split in code**: `Core/Sections.lua` (model), `Core/Layout.lua` (pure layout), `Core/BagState.lua` (controller: owns store + slots + held item, `Pickup/Drop` decide pin-vs-swap, emits `changed`/`cursor`), `UI/Window.lua` (view only: draws `BagState:Layout()`, forwards gestures). | Audit 2026-11-17 found the view mutating the model. Drop semantics are now unit-tested and survive the M4 switch to secure buttons untouched; the mock item source is swapped for the Client provider inside the controller. |
+| D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner, 2026-11-17, after seeing headers, `+` cell and handle cell in game: too gaudy. |
 
 ## Architecture
 
@@ -61,9 +61,10 @@ The Toss line is the first shippable slice after the mockup: an always-visible l
               +---------------+----------------+
               |                                |
        +------v------+                  +------v------+
-       |  Toss line  |                  | Bag window  |
-       | (LDB+frame) |                  | (themes)    |
-       +-------------+                  +-------------+
+       |  BagState   |----------------->| Bag window  |
+       | (controller)|   Layout() +     | (view,      |
+       +-------------+   changed/cursor |  themes)    |
+                                        +-------------+
 ```
 
 Three rules hold across the whole design:
@@ -79,19 +80,19 @@ KondoBags/                              git repo  (github WoWAddons-Kuro/KondoBa
   README.md  CHANGELOG.md  LICENSE(MIT)  .pkgmeta  .gitignore  .luacheckrc
   SPECS/
     00_KondoBags_Core.md                this file
-    01_...                              later specs (themes, Toss line, bank) as they split out
+    01_...                              later specs (themes, bank, quests) as they split out
   docs/                                 design notes, mockup screenshots
   spec/                                 off-client tests:  lua5.1 spec/run.lua
-    wow_mock.lua  run.lua  fixtures/*.lua (dumped snapshots, quest logs)
+    run.lua  fixtures/*.lua (dumped snapshots, quest logs; M1)
   KondoBags/                            the addon; folder name == TOC name
     KondoBags.toc
     KondoBags.lua                       bootstrap, slash, events
-    Core/                               pure Lua: Model.lua Classifier.lua Sort.lua Layout.lua QuestNeeds.lua Toss.lua
-    Client/                             providers: Client.lua (interface + selection), Era.lua, Mainline.lua, Mock.lua
-    UI/                                 Window.lua Cells.lua Search.lua EditMode.lua Theme.lua Themes/Flat.lua Themes/Classic.lua
-    Toss/                               TossLine.lua (LDB object + standalone frame)
+    Core/                               pure Lua (D9): Sections.lua (model) Layout.lua BagState.lua (controller);
+                                        M1+: Model.lua Classifier.lua Sort.lua QuestNeeds.lua
+    Client/                             M1+: providers Client.lua (interface + selection), Era.lua, Mainline.lua, Mock.lua
+    UI/                                 Window.lua (view) EditMode.lua Theme.lua Themes/Classic.lua Themes/Modern.lua
     Mock/                               MockSnapshot.lua (M0 fake data; shipped only while M0..M3 are in progress)
-    Libs/                               LibStub, LibEditMode, CallbackHandler-1.0, LibDataBroker-1.1  (vendored)
+    Libs/                               LibStub, LibEditMode (vendored)
 ```
 
 `.pkgmeta`: `package-as: KondoBags`, `move-folders: KondoBags/KondoBags: KondoBags`, `ignore: SPECS/, docs/, spec/, *.md`.
@@ -215,21 +216,13 @@ KondoBagsCharDB = {                       -- ## SavedVariablesPerCharacter
 }
 KondoBagsDB = {                           -- ## SavedVariables (account): display-only, nothing about sorting
   theme = "flat" | "classic",
-  tossLineShown = true,
+  theme = "classic" | "modern",
 }
 ```
 
 Stackables and consumables pin by item ID. Gear pins by an instance key (M6), because two drops with the same item ID can differ by random suffix or enchant.
 
-### Toss line (M2)
-
-**Candidate set:** slots of kind `general`, quality Common or below, not in Keep, not in either Quest section, `sellPrice > 0`, not locked. The candidate with the lowest stack value (`sellPrice * count`) is shown. Items with no vendor value are excluded unless pinned to Junk.
-
-Only `general` slots are candidates because deleting from a restricted bag does not free a slot that loot can land in.
-
-**Display:** `[icon] x<count> - <money> <name>`. Published two ways from the same state: a LibDataBroker data object, and a small standalone movable frame (Edit Mode registered). Always visible.
-
-**Click:** picks up the slot and deletes the cursor item inside the click handler (`DeleteCursorItem` is `#hwevent`; Forever allows one item per hardware event). One click deletes one stack. Nothing is ever deleted without a click, and quality above Common is never a candidate. Before deleting, the handler re-reads the slot and aborts if its contents no longer match what was displayed. Right-click pins the shown item to Keep.
+*(A junk-deletion widget was specified here in Draft 2 and removed in Draft 3; out of scope until the window is done.)*
 
 ### Bag window
 
@@ -237,50 +230,45 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 
 **Starting point: the stock Combined Backpack, unchanged.** Same frame art, title bar, portrait, close button, search box, sort button, slot grid, money bar. The only thing classic bags lack is differentiation: the grid is one undifferentiated run of boxes. KondoBags adds *sections* on top of that grid and nothing else. **No labelled header rows** (five empty "Quest / Keep / Junk…" headers on a fresh character looked dumb and stopped looking like the stock bag; rejected 2026-11-17).
 
-**Grid.** Column count comes from the window width; the window is **drag-resizable in Edit Mode, snapping to whole cells** (`KondoBags_GridColumns` saved by the Edit Mode layout; rows follow from content). Cells fill left-to-right, top-to-bottom within a section. Empty slots stay as empty slot art, exactly like stock. Restricted bags (quiver, soul, reagent) keep their stock windows in this iteration.
+**Grid.** Column count comes from the window width; the window is **drag-resizable in Edit Mode, snapping to whole cells** (`KondoBagsCharDB.window.columns`; rows follow from content). Every run of cells is **bottom-anchored like the stock bags**: its last row is full and any partial row is the top row, right-aligned, so free space appears top-left. Empty slots stay as empty slot art (a faded bag icon), exactly like stock. Restricted bags (quiver, soul, reagent) keep their stock windows in this iteration.
 
-**The "+" cell.** The first cell of the unsectioned part of the grid is not an item slot; it is a drop target drawn as a stock empty slot with a subtle `+` glyph. Dropping an item on it creates a new **section** containing that item. A section is drawn as its own run of cells ending with a **handle cell**; a thin divider separates it from what follows.
+**Sections (D10).** The unsectioned remainder ("incoming") is drawn first. Below it, each section in display order is one run of cells: a single **drop cell** — stock empty-slot art with a faded lock glyph — immediately to the LEFT of the section's first item, then its items. Dropping a held item on the drop cell pins it into that section. No header, no divider, no handle. A new character starts with one section, **Keep**, holding Hearthstone, so the window reads as "the stock bag plus one more row with the hearthstone at the bottom-right".
 
-**The handle cell.** Every section ends with one cell that is not a slot: a handle, drawn with a small grip glyph rather than slot art. It is the section's single control:
+```
+ fresh character (10 columns)                   after dropping Linen Cloth on the lock cell
++------------------------------------------+   +------------------------------------------+
+| (o) KondoBags                       [x]  |   | (o) KondoBags                       [x]  |
+|           [ search          ]            |   |           [ search          ]            |
+|                          [ ][ ][cloth]   |   |                             [ ][ ][ ]    |
+|  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]          |   |  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]          |
+|  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]          |   |  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]          |
+|                          [lock][hearth]  |   |                   [lock][cloth][hearth]  |
+|                             8s 62c       |   |                             8s 62c       |
++------------------------------------------+   +------------------------------------------+
+```
 
-| Gesture on the handle | Effect |
+| Gesture | Effect |
 |---|---|
-| Drag | Reorder the section among the other sections (drop position = new index) |
-| Drop an item on it | Pin that item into this section (needs no free slot) |
-| Right-click | Context menu for the section: rename, dissolve, and later the automatic-section options once we know what those are |
-| Hover | Tooltip: section name, item count, how items got here (pinned / quest / grey) |
+| Drop an item on a section's lock cell | Pin that item into the section (logical; needs no free slot; the item does not change physical slot) |
+| Drop on an item cell / empty slot | Stock swap / place behaviour, untouched |
+| Hover the lock cell | Tooltip: section name, item count, "drop an item here to keep it" |
+| *(later)* right-click the lock cell | Section options: rename, dissolve, unpin, new section |
 
-Items are added to a section by dropping on its handle (or on the `+` for a new one). The handle sits in the section's last cell so the drop target is always adjacent to the items and never a separate row.
+**Rejected along the way (2026-11-17, kept for the record):** labelled header rows with thin rules; a `+` cell that creates a section; a per-section handle cell (`≡`) for drag-reorder / right-click; divider lines between sections. All read as gaudy next to the stock bag.
 
-```
- fresh character                       after dropping Linen Cloth on [+], then Wool on its handle
-+-----------------------------------+  +-----------------------------------+
-| (o) Combined Backpack        [x]  |  | (o) Combined Backpack        [x]  |
-|  [ search            ]     [sort] |  |  [ search            ]     [sort] |
-|  [+][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |  |  [cloth][wool][=]                 |
-|  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |  |  - - - - - - - - - - - - - - - -  |
-|  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |  |  [+][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |
-|                          8s 62c   |  |  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |
-+-----------------------------------+  |  [ ][ ][ ][ ][ ][ ][ ][ ][ ][ ]   |
-                                       |                          8s 62c   |
-          [+] = new-section drop cell  +-----------------------------------+
-          [=] = section handle cell
-```
-
-- Sections are *logical*. A dropped item does not change physical slot. `OnReceiveDrag` on `+`/handle records a pin in `KondoBagsCharDB.sections` and returns the cursor item to its slot (`PickupContainerItem` on the same bag/slot). **A drop never needs a free slot.**
-- Dropping on an item cell or an empty slot keeps the stock swap/place behaviour untouched.
-- The unsectioned remainder ("everything else") has no handle and no name; it is just the rest of the grid, with the `+` cell at its start.
-- The classifier's automatic sections (Quest, Junk, …) come later and render with the same cells, handle and divider, so the mockup proves the user-made section first.
+- Sections are *logical*. `OnReceiveDrag` on a lock cell records a pin in `KondoBagsCharDB.sections` and returns the cursor item to its slot. **A drop never needs a free slot.**
+- The classifier's automatic sections (Quest, Junk, …) come later and render as more runs with the same lock cell, so the mockup proves the user-made section first.
 
 ```lua
 -- pseudocode: illustrative only
-KondoBagsCharDB.sections = {                  -- array; order is display order (handle drag reorders)
-  { id = KondoBags_SectionID, name = "Quest stuff", items = { [itemID] = true } },
+KondoBagsCharDB.sections = {                  -- KondoBags_SectionStore; list order is display order
+  nextID = 2,
+  list = { { id = "s1", name = "Keep", items = { [6948] = true } } },
 }
 KondoBags_SectionID = string                  -- stable key, e.g. "s1", never reused
 ```
 
-**M0 mockup scope:** stock-looking window from a fake snapshot; `+` cell; mock pick-up/drop creating a section with handle and divider; handle drag to reorder (two sections); Edit Mode move + cell-snapped resize. Right-click menu is a stub.
+**M0 mockup scope:** stock-looking window from a fake snapshot; default Keep section with lock cell; mock pick-up (carry icon follows the mouse) and drop-to-pin; Edit Mode move + cell-snapped resize. Creating further sections is not in M0.
 
 **Previous layout (rejected 2026-11-17, kept for the record):**
 
@@ -368,13 +356,14 @@ Each phase ends with something usable in play, and nothing is built before the l
 - [x] `KondoBags/KondoBags.toc` loading on Era (seen 2026-11-17); vendored LibStub + LibEditMode. Forever: to confirm
 - [x] `Mock/MockSnapshot.lua`: 16-slot backpack + 6-slot bag with real icon paths and counts (no restricted strips in this iteration)
 - [x] `UI/Theme.lua` + `Themes/Classic.lua` + `Themes/Modern.lua`: metrics and colours as data
-- [x] `UI/Window.lua`: stock-look frame, grid, `+` cell, handle cell, divider, mock pickup/drop with carry icon, handle drag reorder, right-click menu, search
+- [x] `UI/Window.lua`: view only (D9); stock-look frame, bottom-anchored grid, lock drop cell per section (D10), mock pickup with carry icon, drop-to-pin, search
+- [x] `Core/Sections.lua` + `Core/Layout.lua` + `Core/BagState.lua` (D9); 12 off-client tests
 - [x] `UI/EditMode.lua`: placeholder registered with LibEditMode; drag + cell-snapped resize grip. In-game verification pending
 - [x] `/kondo` toggles the mock window; `/kondo status`, `theme`, `columns`, `reset`
-- [ ] Visual sign-off on classic theme (iterating: portrait ring, search row, bg tint, slot icons — 2026-11-17)
-- [ ] Spec hygiene: purge Toss-line remnants (M2 section, settings rows, `tossLineShown`)
+- [ ] Visual sign-off on classic theme: lock drop cell look pending; portrait/search/bg/money/footer accepted 2026-11-17
+- [x] Spec hygiene: Toss-line remnants purged (Draft 3)
 
-Exit criteria: owner looks at it on both clients and signs off on frame art, spacing, cell art, `+`/handle glyphs, divider. Screenshots saved to `docs/`.
+Exit criteria: owner looks at it on both clients and signs off on frame art, spacing, cell art, lock cell. Screenshots saved to `docs/`.
 
 ### Phase 1 — Dev loop, bag model, classifier core (M1)
 
