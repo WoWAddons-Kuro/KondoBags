@@ -1,0 +1,45 @@
+std = "lua51"
+max_line_length = 140
+codes = true
+exclude_files = {
+    "KondoBags/Libs/",
+}
+
+ignore = {
+    "212/self",
+    "211/_.*",
+    "213/_.*",
+}
+
+read_globals = {
+    -- Lua / WoW Lua extensions
+    "table", "string", "math", "pairs", "ipairs", "type", "tostring", "tonumber",
+    "select", "unpack", "wipe", "strsplit", "strmatch", "strtrim", "format", "pcall",
+    "ceil", "floor", "max", "min",
+
+    -- WoW API
+    "CreateFrame", "UIParent", "GameTooltip", "GameTooltip_Hide", "GetTime", "C_Timer",
+    "InCombatLockdown", "hooksecurefunc", "IsShiftKeyDown", "IsAltKeyDown", "IsControlKeyDown",
+    "GetCursorInfo", "CursorHasItem", "ClearCursor", "GetCursorPosition", "SetCursor", "ResetCursor",
+    "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL",
+    "C_Container", "C_Item", "C_AddOns", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
+    "SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
+    "BackdropTemplateMixin", "Settings", "InterfaceOptions_AddCategory", "MenuUtil",
+    "WOW_PROJECT_ID", "WOW_PROJECT_MAINLINE", "WOW_PROJECT_CLASSIC", "WOW_PROJECT_CAMELOT",
+    "WOW_PROJECT_CATACLYSM_CLASSIC", "WOW_PROJECT_MISTS_CLASSIC",
+    "NUM_BAG_SLOTS", "NUM_TOTAL_EQUIPPED_BAG_SLOTS", "NUM_BAG_FRAMES", "KEYRING_CONTAINER",
+    "ITEM_QUALITY_COLORS", "GameFontHighlight", "GameFontNormal", "GameFontHighlightSmall",
+    "NumberFontNormal", "ChatFontNormal", "STANDARD_TEXT_FONT",
+    "LibStub",
+}
+
+files["KondoBags/"] = {
+    globals = {
+        "KondoBagsDB", "KondoBagsCharDB",
+        "SLASH_KONDOBAGS1", "SLASH_KONDOBAGS2", "SlashCmdList",
+    },
+}
+
+files["spec/**"] = {
+    globals = { "CreateFrame", "UIParent", "LibStub", "wipe" },
+}

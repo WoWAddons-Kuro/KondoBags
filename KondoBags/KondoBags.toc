@@ -1,0 +1,30 @@
+## Interface: 16001
+## Interface-Camelot: 16001
+## Interface-Classic: 11509
+## Interface-Cata: 40402
+## Interface-Mists: 50500
+## Interface-Mainline: 120000
+## Title: KondoBags
+## Notes: Bags that organise themselves into sections. Drag an item onto the + to start one.
+## Author: Kuro
+## Version: @project-version@
+## SavedVariables: KondoBagsDB
+## SavedVariablesPerCharacter: KondoBagsCharDB
+## OptionalDeps: LibStub, LibEditMode
+## IconTexture: Interface\Icons\INV_Misc_Bag_08
+## X-Website: https://github.com/WoWAddons-Kuro/KondoBags
+
+Libs\LibStub\LibStub.lua
+Libs\LibEditMode\embed.xml
+
+Core\Sections.lua
+
+UI\Theme.lua
+UI\Themes\Classic.lua
+UI\Themes\Modern.lua
+UI\Window.lua
+UI\EditMode.lua
+
+Mock\MockSnapshot.lua
+
+KondoBags.lua

@@ -1,0 +1,14 @@
+package-as: KondoBags
+
+move-folders:
+  KondoBags/KondoBags: KondoBags
+
+ignore:
+  - ".git*"
+  - .luacheckrc
+  - "*.md"
+  - SPECS
+  - docs
+  - spec
+  - "*.png"
+  - "*.jpg"
