@@ -177,6 +177,10 @@ stock bags hide the texture entirely (`ContainerFrame.Vanilla.lua`). We draw it 
   full size, unclipped. Theme: `slimLockScale`, `slimDropGlyph`, `slimLockBg`.
 - **Kept -> other group drop** (`cf0d0af`): the live reorder issues ONE `Pickup` on the item's own slot so the real cursor drops on mouse-up.
 - `/kondo cursor`: debug readout of the carried item's family, per-kind fit, `BagState.held/heldFamily`, and which typed cells are marked.
+- **Release polish** (`1d74619`..`f1e54ba`): fresh install anchors the window where the stock bags open (`window.placed`); display name
+  "Kondo Bags" in the AddOns list / Settings (identifiers unchanged, owner decision: no rename); `/kondo reset` = factory reset behind
+  `KONDOBAGS_RESET_ALL`, same button on the Settings page; modern theme: nil-glyph fix, dimmer window edge, flat `+`; README rewritten.
+  Workspace `Scripts/release.cs` now discovers packager-style repos (`<name>\<name>\<name>.toc`) so `release.cmd` lists KondoBags.
 
 ## Open questions
 
