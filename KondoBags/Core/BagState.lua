@@ -140,6 +140,12 @@ function BagState:SetHover(cell)
   if self.held and self.insertMode then self:Emit("cursor") end
 end
 
+-- Same as SetHover but never emits: for the view's post-render re-sync, which must not trigger
+-- another render (see UI/Window.lua Render). The caller checks InsertPoint() before/after.
+function BagState:SetHoverSilent(cell)
+  self.hoverCell = cell
+end
+
 function BagState:SetInsertMode(on)
   on = on and true or false
   if self.insertMode == on then return end
