@@ -250,7 +250,10 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 | Gesture | Effect |
 |---|---|
 | Drop an item on a section's lock cell | Pin that item into the section (logical; needs no free slot; the item does not change physical slot) |
-| Drop on an item cell / empty slot | Stock swap / place behaviour, untouched |
+| Drop a kept item on another item in the **same** section | Reorder: it takes that item's position (logical) |
+| **Shift** while carrying, over a section | A phantom insert cell opens under the mouse and the row re-flows live; drop lands exactly there (before the hovered item, or at the end when over the lock). Release Shift and the gap closes |
+| Drop a kept item on a **loose** cell (above the sections) | Unpin it ("stop keeping it") and do the stock swap / place |
+| Any other drop on an item cell / empty slot | Stock swap / place behaviour, untouched. Pins follow the item, not the slot |
 | Hover the lock cell | Tooltip: section name, item count, "drop an item here to keep it" |
 | *(later)* right-click the lock cell | Section options: rename, dissolve, unpin, new section |
 
