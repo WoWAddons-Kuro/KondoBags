@@ -1,5 +1,7 @@
 # KondoBags
 
+![KondoBags, classic theme: incoming grid above, a Keep row led by a lock cell below](Assets/KondoBags_Screenshot_Classic.jpg)
+
 A bag addon for World of Warcraft that organizes your backpack the way a tidy person would, without you writing a single rule.
 
 The window is the stock bag grid plus **Keep**:
@@ -26,6 +28,7 @@ Alpha. See [`SPECS/00_KondoBags_Core.md`](SPECS/00_KondoBags_Core.md) for the de
 ```
 KondoBags/            the addon (what gets installed)
 SPECS/                design specs
+Assets/               screenshots for this README
 docs/                 notes and screenshots
 spec/                 off-client tests, run with  lua5.1 spec/run.lua
 ```
