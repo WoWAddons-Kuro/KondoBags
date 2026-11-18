@@ -32,7 +32,7 @@ end
 function BagState.New(opts)
   local self = setmetatable({}, BagState)
   self.slots = IndexSlots(opts.slots or {})
-  self.store = Sections.Reconcile(opts.store, #self.slots)
+  self.store = Sections.Reconcile(opts.store, #self.slots, self.slots)
   self.columns = opts.columns or 10
   self.held = nil
   self.hoverCell = nil
@@ -113,7 +113,7 @@ end
 
 function BagState:SetSlots(slots)
   self.slots = IndexSlots(slots or {})
-  self.store = Sections.Reconcile(self.store, #self.slots)
+  self.store = Sections.Reconcile(self.store, #self.slots, self.slots)
   self.held = nil
   self:Emit("changed")
 end

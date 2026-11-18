@@ -185,8 +185,12 @@ end
 
 -- Validate/repair a saved store against the current slot count (bag resized, old format, etc.).
 -- Returns the store (possibly replaced). A section whose order does not match its range is rebuilt.
-function Sections.Reconcile(store, slotCount)
+function Sections.Reconcile(store, slotCount, slots)
   if type(store) ~= "table" or type(store.list) ~= "table" then return Sections.NewStore(slotCount) end
+  -- D11 invariant: every section slot is OCCUPIED. With `slots` we enforce it: a saved range that
+  -- reaches down into empty slots is cut back to its occupied top, so stale stores never draw empty
+  -- cells inside a section. Without `slots` (tests of pure bookkeeping) ranges are trusted.
+  local function occupied(slot) return not slots or (slots[slot + 1] ~= nil and slots[slot + 1].item ~= nil) end
   local top = slotCount
   for i = #store.list, 1, -1 do
     local s = store.list[i]
@@ -194,11 +198,18 @@ function Sections.Reconcile(store, slotCount)
       -- legacy (itemID-based) or out-of-range: collapse to empty at the top
       s.boundary, s.order = top, {}
     end
+    local low = top
+    while low > s.boundary and occupied(low - 1) do low = low - 1 end
+    s.boundary = low
     local want = top - s.boundary
-    if #s.order ~= want then
-      s.order = {}
-      for slot = s.boundary, top - 1 do s.order[#s.order + 1] = slot end
+    -- keep the saved visual order where it still names slots in range; append any missing
+    local seen, order = {}, {}
+    for _, slot in ipairs(s.order or {}) do
+      if slot >= s.boundary and slot < top and not seen[slot] then order[#order + 1] = slot; seen[slot] = true end
     end
+    for slot = s.boundary, top - 1 do if not seen[slot] then order[#order + 1] = slot end end
+    s.order = order
+    assert(#s.order == want)
     top = s.boundary
   end
   return store
