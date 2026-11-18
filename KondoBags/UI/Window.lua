@@ -528,7 +528,8 @@ local function DressCell(b, cell, theme)
       if b.normal and theme.slotNormal then
         local sn = theme.slotNormal
         local ratio = sn.size / theme.cell.size                      -- ring art : cell (64 : 37 on classic)
-        b.normal:SetSize(slimW * ratio, sn.size)
+        local slimCellW = math.floor(theme.cell.size * (theme.slimLockScale or 0.5) + 0.5)   -- same as Render's slimW
+        b.normal:SetSize(slimCellW * ratio, sn.size)
         b.normal:Show()
       end
       local g = theme.slimDropGlyph or theme.dropGlyph
