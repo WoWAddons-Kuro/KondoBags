@@ -216,16 +216,20 @@ function BagState:Drop(cell)
     local anchorRef = cell.kind == Layout.CELL_GAP and cell.anchorRef or nil
     local anchorSlot = anchorRef and anchorRef.slotIndex or nil
     local isFree = function(slot) local r = self.slots[slot + 1]; return r ~= nil and r.item == nil end
-    if held == "external" then
+    -- An item that is NOT in the general flat list -- an external cursor (bank, mail, trade) or one
+    -- of our own TYPED slots (herb bag, quiver...) -- pins the same way: it needs a free general slot
+    -- `e` to land in, then the chain-shift carries it to boundary-1. PinFromIncoming(nil) picks e.
+    local fromOutside = held == "external" or (held.kind ~= nil and held.kind ~= "general")
+    if fromOutside then
       local moves, e = Sections.PinFromIncoming(self.store, targetGroup, nil, anchorSlot, isFree)
       if not moves then return false end
-      -- Place the cursor item into slot e first (one Pickup), then the chain-shift.
-      local r = self.slots[e + 1]
-      self.moveQueue:Push({ { place = true, bagID = r.bagID, slot = r.slot } })
-      self:ApplyMoves(moves)
+      -- The item is already on the cursor, so like the loose-pin case every step is one PLACE on the
+      -- destination: first into the hole e, then each chain destination up to boundary-1.
+      local ops = { { place = true, bagID = self.slots[e + 1].bagID, slot = self.slots[e + 1].slot } }
+      for _, m in ipairs(moves) do local r = self.slots[m.to + 1]; ops[#ops + 1] = { place = true, bagID = r.bagID, slot = r.slot } end
+      self.moveQueue:Push(ops)
       self.cursorGap = nil; self:Emit("changed"); return true
     end
-    if held.kind and held.kind ~= "general" then return false end          -- typed items never pin
     if Sections.IsKept(self.store, held.slotIndex) then
       Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)   -- visual reorder; cursor keeps the item
       self.cursorGap = nil; self:Emit("changed"); return true

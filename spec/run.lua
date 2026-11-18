@@ -310,7 +310,8 @@ test("typed slots: one run above incoming, mixed kinds, do not shift the general
   eq(rows[1].cells[1].slotKind, "quiver"); eq(rows[1].cells[3].slotKind, "herb")
   eq(rows[1].cells[3].ref.item.itemID, 900)
   ok(not rows[2].typed, "incoming follows")
-  -- pins to/from typed cells are refused and the held item is released (never stuck on the cursor)
+  -- MOCK path: a typed item on the lock is refused (the mock has no cursor to land it with); a general
+  -- item on a typed cell is refused. In both cases the held item is released (never stuck).
   ok(bag:Pickup(bag.typedSlots[1]))
   ok(not bag:Drop(LockCell(bag)), "typed item cannot be pinned"); ok(bag.held == nil, "released")
   ok(bag:Pickup(bag.slots[1]))
@@ -409,6 +410,23 @@ test("hideLocks: external cursor with no free general slot emits no lock / gap c
   local bag2 = B.New({ store = KeepStore(6, 1), slots = Bag(6, { 0, 1, 3, 4, 5 }), columns = 6 })
   bag2.live = true; bag2:SetCursor("external")
   ok(LockCell(bag2) ~= nil, "one free slot: lock shown")
+end)
+
+test("live Drop on a lock from a TYPED slot (herb bag): lands in the free general slot, then the chain", function()
+  -- general 0..5 with slot 2 free, keep = {5}; herb bag item on the cursor
+  local all = Bag(6, { 0, 1, 3, 4, 5 })
+  all[#all + 1] = { bagID = 2, slot = 1, kind = "herb", item = Item(900) }
+  local bag = B.New({ store = KeepStore(6, 1), slots = all, columns = 6 })
+  bag.live = true
+  local issued = {}
+  bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = b .. ":" .. s end },
+    function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
+  bag:SetCursor(bag.typedSlots[1])
+  ok(bag:Drop(LockCell(bag)), "typed item pins like an external one")
+  eq(bag.store.boundary, 4)
+  eq(issued[1], "0:3", "first place: into the free general slot (index 2 = slot 3)")
+  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[2], "0:4")
+  bag.moveQueue:OnBagUpdateDelayed(); eq(issued[3], "0:5", "lands at boundary-1 (index 4 = slot 5)")
 end)
 
 -- ---------------------------------------------------------------------------
