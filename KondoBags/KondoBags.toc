@@ -26,6 +26,7 @@ Core\Sections.lua
 Core\Layout.lua
 Core\BagState.lua
 Core\Scan.lua
+Core\MoveQueue.lua
 
 UI\Theme.lua
 UI\Themes\Classic.lua

@@ -733,7 +733,11 @@ function Window.SetMoney(copper)
 end
 function Window.Frame() return frame end
 function Window.Show() CreateWindow(); Window.Render(); frame:Show() end
-function Window.Hide() if frame then frame:Hide() end; if view.bag then view.bag:ClearCursor() end end
+function Window.Hide()
+  if frame then frame:Hide() end
+  if view.bag and view.bag.live then if ns.ClearNewItems then ns.ClearNewItems() end
+  elseif view.bag then view.bag:ClearCursor() end
+end
 function Window.Toggle() if frame and frame:IsShown() then Window.Hide() else Window.Show() end end
 function Window.IsShown() return frame and frame:IsShown() end
 

@@ -63,6 +63,17 @@ local function LiveScan()
   return (ns.Scan.Refs(ns.Client.Active()))
 end
 
+-- "New item" glow. The client flags every slot new at login and only clears them when a stock bag
+-- frame HIDES (ContainerFrame_OnHide -> UpdateNewItemList -> C_NewItems.RemoveNewItem). Our window
+-- never shows those frames, so we do the same clear ourselves: on first scan (login state is not
+-- "new") and whenever our window closes (anything looted while it was open has been seen).
+local function ClearNewItems()
+  if not (C_NewItems and C_NewItems.RemoveNewItem) or not liveBag then return end
+  for _, r in ipairs(liveBag.slots) do C_NewItems.RemoveNewItem(r.bagID, r.slot) end
+  for _, r in ipairs(liveBag.typedSlots) do C_NewItems.RemoveNewItem(r.bagID, r.slot) end
+end
+ns.ClearNewItems = ClearNewItems
+
 local function EnsureLive()
   if liveBag then return liveBag end
   liveBag = ns.BagState.New({
@@ -79,6 +90,7 @@ local function EnsureLive()
     local ref = liveBag.slots[slotIndex + 1]
     return ref.bagID, ref.slot
   end)
+  ClearNewItems()                                  -- login state is not "new"
   return liveBag
 end
 
