@@ -20,6 +20,10 @@
 --   * every section is its own run of cells, items first, then ONE handle cell; a divider line sits
 --     above the first row of each section after the first;
 --   * the unsectioned remainder starts with ONE plus cell, then its slots; no handle, no name;
+--   * cells fill left-to-right; a run never shares a row with another run;
+--   * a run is bottom-anchored like the stock bags: its last row is full, the partial row is on TOP,
+--     right-aligned (so free space appears at the top-left of each run). Cells carry `col`.
+--   * the handle is the last cell of its run, so it always sits bottom-right of the section.
 --   * cells fill left-to-right, top-to-bottom; a run never shares a row with another run;
 --   * a handle that lands alone on a new row stays there (that is where the next item would go).
 
@@ -33,14 +37,27 @@ Sections.CELL_SLOT, Sections.CELL_HANDLE, Sections.CELL_PLUS = CELL_SLOT, CELL_H
 
 -- Lay one run of cells into rows of `columns`. Returns the rows (array) it produced.
 local function LayoutRun(cells, columns, sectionID, dividerAbove)
+  -- Bottom-anchored like the stock bags: the last row is always full and the partial row (if any)
+  -- is the TOP row, right-aligned. Each cell gets `col` (1-based); a row holds only real cells.
+  --   7 cells, 4 columns  ->  [ ][c1][c2][c3]
+  --                           [c4][c5][c6][c7]
   local rows = {}
+  local n = #cells
+  if n == 0 then return rows end
+  local firstRowCount = n % columns
+  if firstRowCount == 0 then firstRowCount = columns end
+  local startCol = columns - firstRowCount + 1
   local row
-  for i, cell in ipairs(cells) do
-    if (i - 1) % columns == 0 then
+  local col = startCol
+  for _, cell in ipairs(cells) do
+    if not row or col > columns then
       row = { cells = {}, sectionID = sectionID, dividerAbove = (#rows == 0) and dividerAbove or false }
       rows[#rows + 1] = row
+      col = (#rows == 1) and startCol or 1
     end
+    cell.col = col
     row.cells[#row.cells + 1] = cell
+    col = col + 1
   end
   return rows
 end

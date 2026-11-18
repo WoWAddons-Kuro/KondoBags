@@ -504,7 +504,7 @@ function Window.Render()
       if not b then b = NewCell(ci); cells[ci] = b end
       DressCell(b, cell, theme)
       b:ClearAllPoints()
-      b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (c - 1) * theme.cell.pitchX, y)
+      b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", ((cell.col or c) - 1) * theme.cell.pitchX, y)
       b:Show()
     end
   end

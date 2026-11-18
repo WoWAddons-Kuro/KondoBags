@@ -22,14 +22,26 @@ local function Ref(bag, slot, itemID)
 end
 
 -- ---------------------------------------------------------------------------
-test("layout: fresh character = one plus cell then loose slots", function()
+test("layout: fresh character = one plus cell then loose slots, bottom-anchored", function()
   local loose = { Ref(0, 1, 10), Ref(0, 2), Ref(0, 3) }
   local r = S.Layout({ columns = 4, sections = {}, loose = loose })
   eq(#r.rows, 1, "rows")
   eq(r.rows[1].cells[1].kind, S.CELL_PLUS, "first cell is +")
+  eq(r.rows[1].cells[1].col, 1, "full row starts at col 1")
   eq(#r.rows[1].cells, 4, "plus + 3 slots")
   eq(r.rows[1].dividerAbove, false, "no divider on first run")
   eq(r.cellCount, 4)
+end)
+
+test("layout: partial row is on top and right-aligned (stock bag fill)", function()
+  -- 7 cells (plus + 6) in 4 columns -> top row has 3 cells in cols 2..4, bottom row full
+  local loose = { Ref(0, 1, 1), Ref(0, 2, 2), Ref(0, 3, 3), Ref(0, 4), Ref(0, 5), Ref(0, 6) }
+  local r = S.Layout({ columns = 4, sections = {}, loose = loose })
+  eq(#r.rows, 2)
+  eq(#r.rows[1].cells, 3, "top row partial");  eq(r.rows[1].cells[1].col, 2, "right-aligned")
+  eq(r.rows[1].cells[1].kind, S.CELL_PLUS, "plus is first in reading order")
+  eq(#r.rows[2].cells, 4, "bottom row full");  eq(r.rows[2].cells[1].col, 1)
+  eq(r.rows[2].cells[4].ref.slot, 6, "last slot bottom-right")
 end)
 
 test("layout: section = items then handle, divider only after first run", function()
@@ -43,12 +55,13 @@ test("layout: section = items then handle, divider only after first run", functi
   eq(r.rows[2].cells[1].kind, S.CELL_PLUS)
 end)
 
-test("layout: handle alone on a new row when items fill the width exactly", function()
+test("layout: items filling the width exactly put the handle alone on TOP, right-aligned", function()
   local sec = { id = "s1", slots = { Ref(0, 1, 1), Ref(0, 2, 2), Ref(0, 3, 3), Ref(0, 4, 4) } }
   local r = S.Layout({ columns = 4, sections = { sec }, loose = {} })
-  eq(#r.rows, 3, "4 items, lone handle row, plus row")
-  eq(#r.rows[2].cells, 1)
-  eq(r.rows[2].cells[1].kind, S.CELL_HANDLE)
+  eq(#r.rows, 3, "partial top row, full row, plus row")
+  eq(#r.rows[1].cells, 1, "top row has one cell")
+  eq(r.rows[1].cells[1].col, 4, "it sits bottom-right -> top-right in reading order")
+  eq(r.rows[2].cells[4].kind, S.CELL_HANDLE, "handle is last cell, bottom-right")
   eq(r.rows[2].dividerAbove, false, "same section, no divider mid-run")
 end)
 
