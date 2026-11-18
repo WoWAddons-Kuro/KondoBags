@@ -13,7 +13,7 @@ ns.Theme.Register({
   frameTemplate = "PortraitFrameTemplate",   -- Blizzard frame; backdrop fields below are ignored when set
   portraitScale = 0.82,                         -- stock 62px circle is too big for a bag; ~30% smaller
   bgTint = { 0.72, 0.72, 0.72, 0.8 },          -- PortraitFrame Bg: ~30% darker, 20% more transparent than stock
-  cell = { size = 37, pitchX = 42, pitchY = 41 },
+  cell = { size = 37, pitchX = 42, pitchY = 41, iconInset = 2 },
   -- PortraitFrameTemplate: Bg starts at y=-21 (below the title bar), border ~6px each side.
   frame = { padLeft = 12, padRight = 12, padTop = 22, padBottom = 8 },
   titleHeight = 38,      -- search row under the title bar (search box + gaps)

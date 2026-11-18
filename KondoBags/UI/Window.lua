@@ -237,6 +237,10 @@ end
 local function DressCell(b, cell, theme)
   b.cell = cell
   b:SetSize(theme.cell.size, theme.cell.size)
+  -- Item icon sits inside the slot border like the stock bags, not edge to edge.
+  local ii = theme.cell.iconInset or 0
+  b.icon:ClearAllPoints()
+  b.icon:SetPoint("TOPLEFT", ii, -ii); b.icon:SetPoint("BOTTOMRIGHT", -ii, ii)
   if theme.slotNormal then
     b.normal:SetTexture(theme.slotNormal.file)
     b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size)
