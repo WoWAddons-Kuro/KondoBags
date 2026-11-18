@@ -135,6 +135,37 @@ function ns.ToggleBags()
   if ns.Window.IsShown() then ns.CloseBags() else ns.OpenBags() end
 end
 
+-- Factory reset: BOTH saved tables back to defaults (account: theme, tints, typed art; character:
+-- Keep groups, window anchor, columns, lock). The window is rebuilt on the spot so the result is
+-- visible without a /reload. Reached only through the KONDOBAGS_RESET_ALL confirm dialog.
+function ns.ResetAll()
+  local wasShown = ns.Window.IsShown()
+  ns.CloseBags()
+  KondoBagsDB = nil
+  KondoBagsCharDB = nil
+  InitDB()
+  liveBag = nil; attached = false
+  ns.Window.SetTheme(KondoBagsDB.theme)
+  EnsureBag()
+  ns.EditMode.ApplyToWindow()
+  if wasShown then ns.OpenBags() end
+  if ns.Options.Refresh then ns.Options.Refresh() end
+  Print("all settings reset to defaults")
+end
+
+StaticPopupDialogs["KONDOBAGS_RESET_ALL"] = {
+  text = "Reset ALL Kondo Bags settings?\n\nThis clears your Keep rows, window position and size for this character, and the account-wide"
+    .. " theme and bag-type settings. Your items are not touched.",
+  button1 = "Reset everything",
+  button2 = CANCEL,
+  OnAccept = function() ns.ResetAll() end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+  showAlert = true,
+  preferredIndex = 3,
+}
+
 -- Event-driven rescan: BAG_UPDATE marks dirty, BAG_UPDATE_DELAYED (coalesced by the client) rescans.
 -- Everything else (money) is cheap enough to refresh on the same tick.
 local dirty = false
@@ -183,11 +214,8 @@ local function Slash(msg)
     ns.Window.Render()
     Print("bag-type border tint %s", KondoBagsDB.kindTint and "on" or "off")
   elseif cmd == "reset" then
-    local wasShown = ns.Window.IsShown()
-    ns.CloseBags()
-    KondoBagsCharDB.sections = nil; liveBag = nil; attached = false
-    if wasShown then ns.OpenBags() else EnsureBag() end
-    Print("sections reset")
+    -- Factory reset behind a confirm dialog (same thing the Settings page's button does).
+    StaticPopup_Show("KONDOBAGS_RESET_ALL")
   elseif cmd == "options" or cmd == "config" or cmd == "settings" then
     ns.Options.Open()
   elseif cmd == "cursor" then

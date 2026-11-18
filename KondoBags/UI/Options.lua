@@ -13,7 +13,7 @@ local optionsCategory, optionsFrame
 local function CreateOptions()
   if optionsFrame then return optionsFrame end
   optionsFrame = CreateFrame("Frame", "KondoBagsOptions")
-  optionsFrame.name = "KondoBags"
+  optionsFrame.name = "Kondo Bags"
 
   local scroll = CreateFrame("ScrollFrame", "KondoBagsOptionsScroll", optionsFrame, "UIPanelScrollFrameTemplate")
   scroll:SetPoint("TOPLEFT", 0, -4)
@@ -29,7 +29,7 @@ local function CreateOptions()
   end)
 
   local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", 16, -16); title:SetText("KondoBags")
+  title:SetPoint("TOPLEFT", 16, -16); title:SetText("Kondo Bags")
   local sub = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
   sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(560); sub:SetJustifyH("LEFT")
   sub:SetText("The stock bag plus Keep rows. Drop an item on a lock cell to keep it there. Position, scale and column count are set in Edit Mode; pins are managed in the window itself.")
@@ -145,7 +145,15 @@ local function CreateOptions()
   GlyphRadio("bag", "Empty special-bag slots show the equipped bag's own icon (Blizzard style)")
   GlyphRadio("kind", "Empty special-bag slots show item-type art (herb, arrow, soul shard, ...)")
   bt:Finish()
-  local lastSection = bt
+
+  -- Section: Reset
+  local rs = Section("Reset")
+  local resetAll = CreateFrame("Button", nil, rs, "UIPanelButtonTemplate")
+  resetAll:SetSize(200, 22); resetAll:SetText("Reset all settings...")
+  resetAll:SetScript("OnClick", function() StaticPopup_Show("KONDOBAGS_RESET_ALL") end)   -- same confirm as /kondo reset
+  rs:Add(resetAll, 22, -8, 4)
+  rs:Finish()
+  local lastSection = rs
 
 
   local function LayoutContentHeight()
@@ -167,7 +175,7 @@ local function CreateOptions()
   optionsFrame:SetScript("OnShow", optionsFrame.Update)
 
   if Settings and Settings.RegisterCanvasLayoutCategory then
-    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsFrame, "KondoBags")
+    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsFrame, "Kondo Bags")
     Settings.RegisterAddOnCategory(optionsCategory)
   elseif InterfaceOptions_AddCategory then
     InterfaceOptions_AddCategory(optionsFrame)
@@ -176,6 +184,9 @@ local function CreateOptions()
 end
 
 function Options.Setup() CreateOptions() end
+
+-- Re-read every widget from the saved variables (after /kondo reset while the panel is open).
+function Options.Refresh() if optionsFrame and optionsFrame.Update then optionsFrame.Update() end end
 
 function Options.Open()
   CreateOptions()
