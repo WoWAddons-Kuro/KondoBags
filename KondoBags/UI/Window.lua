@@ -399,9 +399,19 @@ end
 -- "!" when the item STARTS a quest not yet accepted (questID and not isActive), the yellow border
 -- when it is a quest item or belongs to an active quest, nothing otherwise. Era's stock bags hide
 -- this texture; we draw it on every client. A slow alpha pulse makes it read without shouting.
+-- Era names the texture "$parentIconQuestTexture" with NO parentKey (classic_era/ContainerFrame.xml:83),
+-- so b.IconQuestTexture is nil there and only the global-name lookup finds it; Forever has the key.
+-- (This was the Era "no quest border" bug: the data said isQuestItem=true, the view found no texture.)
+local function QuestTexture(b)
+  if b.IconQuestTexture then return b.IconQuestTexture end
+  local name = b:GetName()
+  local tex = name and _G[name .. "IconQuestTexture"] or nil
+  if tex then b.IconQuestTexture = tex end            -- cache under the Forever key for the rest of the file
+  return tex
+end
 local function QuestPulse(b, theme)
   if b.questPulse then return b.questPulse end
-  local tex = b.IconQuestTexture
+  local tex = QuestTexture(b)
   local ag = tex:CreateAnimationGroup()
   ag:SetLooping("REPEAT")
   local half = (theme.questPulsePeriodSec or Theme.QUEST_PULSE_PERIOD_SEC) / 2
@@ -416,7 +426,7 @@ local function QuestPulse(b, theme)
 end
 
 local function SetQuestHighlight(b, quest, theme)
-  local tex = b.IconQuestTexture
+  local tex = QuestTexture(b)
   if not tex then return end
   local file
   if quest and quest.questID and not quest.isActive then file = TEXTURE_ITEM_QUEST_BANG
