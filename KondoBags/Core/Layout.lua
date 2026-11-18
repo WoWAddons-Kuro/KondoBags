@@ -101,7 +101,6 @@ function Layout.Build(input)
     -- a gutter LEFT of the grid, on the group's TOP row -- so the grid itself never changes. The view
     -- widens the window by that gutter only while some row carries a slim lock (KondoBags_LayoutResult.slimGutter).
     local lock
-    local lock
     if not input.hideLocks then lock = { kind = Layout.CELL_DROP, sectionID = section.id }; cells[1] = lock end
     -- Shift-drag: the cursor gap. See KondoBags_CursorGap RENDER RULE above: the gap takes the
     -- anchor's column and the anchor slides left, which in reading order means the gap cell is
