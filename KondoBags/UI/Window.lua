@@ -263,14 +263,22 @@ local function DressCell(b, cell, theme)
     b.normal:SetTexture(theme.slotNormal.file)
     b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size)
     b.normal:SetPoint("CENTER", 0, theme.slotNormal.offsetY or 0)
+    b.normal:SetVertexColor(1, 1, 1)
     b.normal:Show()
   else
     b.normal:Hide()
   end
   if theme.slotFlat then b.bg:SetColorTexture(unpack(theme.slotFlat)); b.bg:Show() else b.bg:Hide() end
-  -- Restricted-bag cell: subtle border tint per slot kind (KondoBagsDB.kindTint toggles it).
+  -- Restricted-bag cell: subtle tint per slot kind (KondoBagsDB.kindTint toggles it). With stock slot
+  -- art the tint colours the rounded Quickslot border itself; the flat theme tints its 1px ring.
   local tint = cell.slotKind and theme.kindTint and theme.kindTint[cell.slotKind]
   if tint and KondoBagsDB and KondoBagsDB.kindTint == false then tint = nil end
+  if tint and theme.slotNormal then
+    local r, g, bl, a = unpack(tint)
+    a = a or 1
+    b.normal:SetVertexColor(1 - (1 - r) * a, 1 - (1 - g) * a, 1 - (1 - bl) * a)   -- blend toward the kind colour
+    tint = nil                                                                   -- no square edges on classic
+  end
   for _, e in ipairs(b.edges) do
     if tint then e:SetColorTexture(unpack(tint)); e:Show()
     elseif theme.slotBorder then e:SetColorTexture(unpack(theme.slotBorder)); e:Show()
@@ -304,11 +312,37 @@ Cell_OnClick = function(b, button)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
   if button == "RightButton" then
-    if cell.kind == Layout.CELL_DROP and not bag:HeldItem() then Window.ShowGroupMenu(b, cell.sectionID) end
+    -- Right-click while carrying always cancels the carry (stock behaviour), nothing else.
+    if bag:HeldItem() then bag:ClearCursor(); return end
+    if cell.kind == Layout.CELL_DROP then Window.ShowGroupMenu(b, cell.sectionID) end
     return
   end
   if bag:HeldItem() then bag:Drop(cell); return end
   if cell.kind == Layout.CELL_SLOT and cell.ref then bag:Pickup(cell.ref) end
+end
+
+-- Clicking the 3D world while carrying: right = cancel, left = the stock "destroy item?" dialog.
+-- Mock-only (M4 uses the real cursor and Blizzard's own dialog). One WorldFrame hook, installed once.
+StaticPopupDialogs["KONDOBAGS_MOCK_DESTROY"] = {
+  text = "Do you want to destroy %s?",
+  button1 = YES, button2 = NO,
+  OnAccept = function()
+    local bag = view.bag
+    if bag and bag.held then bag.held.item = nil; bag:ClearCursor(); bag:Emit("changed") end
+  end,
+  OnCancel = function() if view.bag then view.bag:ClearCursor() end end,
+  timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+}
+local function InstallWorldClickHook()
+  if view.worldHooked or not WorldFrame then return end
+  view.worldHooked = true
+  WorldFrame:HookScript("OnMouseDown", function(_, button)
+    local bag = view.bag
+    local item = bag and bag:HeldItem()
+    if not item then return end
+    if button == "RightButton" then bag:ClearCursor()
+    elseif button == "LeftButton" then StaticPopup_Show("KONDOBAGS_MOCK_DESTROY", item.name) end
+  end)
 end
 
 -- Right-click menu on a group's lock cell. One item for now: remove the group (items -> incoming).
@@ -393,7 +427,10 @@ function Window.Render()
   local rowY, extraH = {}, 0
   local y = 0
   for r, row in ipairs(layout.rows) do
-    if r > 1 and row.sectionID ~= layout.rows[r - 1].sectionID then
+    -- A run boundary: typed -> incoming, incoming -> group, group -> group.
+    local prev = layout.rows[r - 1]
+    local runChanged = prev and (row.sectionID ~= prev.sectionID or (row.typed or false) ~= (prev.typed or false))
+    if runChanged then
       y = y - (sectionGap - rowGap); extraH = extraH + (sectionGap - rowGap)
     end
     rowY[r] = y
@@ -489,6 +526,7 @@ function Window.Attach(opts)
     view.bag:AddListener(OnBagEvent)
     view.bag:SetInsertMode(IsShiftKeyDown())
   end
+  InstallWorldClickHook()
   -- Shift toggles insert mode while carrying (see BagState). One event frame for the window.
   if not view.modFrame then
     view.modFrame = CreateFrame("Frame")

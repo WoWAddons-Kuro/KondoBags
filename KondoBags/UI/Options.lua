@@ -1,0 +1,152 @@
+-- KondoBags UI/Options.lua -- the Settings panel. Layout modelled on GotJunk's options page:
+-- a scrolling canvas holding bordered Section boxes, each widget hanging off the previous one at a
+-- fixed left column; every widget has an :Update() that re-reads the saved variables, and the whole
+-- tree is refreshed on show. The complete list of settings is in SPECS/00 "Settings" and is meant to
+-- stay that short.
+
+local _, ns = ...
+local Options = {}
+ns.Options = Options
+
+local optionsCategory, optionsFrame
+
+local function CreateOptions()
+  if optionsFrame then return optionsFrame end
+  optionsFrame = CreateFrame("Frame", "KondoBagsOptions")
+  optionsFrame.name = "KondoBags"
+
+  local scroll = CreateFrame("ScrollFrame", "KondoBagsOptionsScroll", optionsFrame, "UIPanelScrollFrameTemplate")
+  scroll:SetPoint("TOPLEFT", 0, -4)
+  scroll:SetPoint("BOTTOMRIGHT", -28, 4)
+  local content = CreateFrame("Frame", nil, scroll)
+  content:SetSize(620, 600)   -- height is corrected in Update once widgets exist
+  scroll:SetScrollChild(content)
+  scroll:SetScript("OnSizeChanged", function(_, w) content:SetWidth(math.max(620, w)) end)
+  scroll:EnableMouseWheel(true)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local max = self:GetVerticalScrollRange()
+    self:SetVerticalScroll(math.max(0, math.min(max, self:GetVerticalScroll() - delta * 40)))
+  end)
+
+  local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  title:SetPoint("TOPLEFT", 16, -16); title:SetText("KondoBags")
+  local sub = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(560); sub:SetJustifyH("LEFT")
+  sub:SetText("The stock bag plus Keep rows. Drop an item on a lock cell to keep it there. Position, scale and column count are set in Edit Mode; pins are managed in the window itself.")
+
+  -- Layout grid: every widget hangs off `last` at a fixed left column; sections are bordered
+  -- boxes with a header.
+  local BOX_W, PAD = 580, 10
+  local last, lastDy = sub, -14
+  local function Place(w, dy, dx) w:SetPoint("TOPLEFT", last, "BOTTOMLEFT", dx or 0, dy or lastDy); last = w; lastDy = -6 end
+
+  -- Checkbox bound to KondoBagsDB[key]; onChange runs after the write.
+  local function Check(parent, key, label, tip, onChange)
+    local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    cb.Text:SetText(label)
+    cb.tooltipText = tip
+    cb:SetScript("OnClick", function(self)
+      KondoBagsDB[key] = self:GetChecked() and true or false
+      if onChange then onChange() end
+    end)
+    cb.Update = function(self) self:SetChecked(KondoBagsDB[key] and true or false) end
+    return cb
+  end
+
+  -- Bordered section. Children are laid out inside with their own `last` chain; the box is
+  -- sized from the running height after the children are added.
+  local function Section(header)
+    local box = CreateFrame("Frame", nil, content, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    box:SetWidth(BOX_W)
+    if box.SetBackdrop then
+      box:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+      box:SetBackdropColor(0, 0, 0, 0.25); box:SetBackdropBorderColor(0.6, 0.6, 0.6, 0.6)
+    end
+    local h = box:CreateFontString(nil, "ARTWORK", "GameFontNormal"); h:SetPoint("TOPLEFT", PAD, -PAD); h:SetText(header)
+    box.inner_last, box.inner_h = h, PAD + 14
+    function box:Add(w, height, dy, dx)
+      dy = dy or -6
+      w:SetPoint("TOPLEFT", self.inner_last, "BOTTOMLEFT", dx or 0, dy)
+      self.inner_last, self.inner_h = w, self.inner_h - dy + height
+      return w
+    end
+    function box:Finish() self:SetHeight(self.inner_h + PAD) end
+    Place(box, -14)
+    return box
+  end
+
+  -- Section: Theme (radio group over KondoBagsDB.theme)
+  local th = Section("Theme")
+  local themeRadios = {}
+  local function ThemeRadio(id, label, tip)
+    local r = CreateFrame("CheckButton", nil, th, "UIRadioButtonTemplate"); r:SetSize(16, 16)
+    r.text = r:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall"); r.text:SetPoint("LEFT", r, "RIGHT", 4, 0); r.text:SetText(label)
+    r.tooltipText = tip
+    r:SetScript("OnClick", function()
+      KondoBagsDB.theme = id
+      for _, o in ipairs(themeRadios) do o:SetChecked(o.themeID == id) end
+      ns.Window.SetTheme(id)
+    end)
+    r.themeID = id
+    r.Update = function(self) self:SetChecked((KondoBagsDB.theme or "classic") == id) end
+    themeRadios[#themeRadios + 1] = r
+    return th:Add(r, 16, -6, 0)
+  end
+  ThemeRadio("classic", "Classic - the stock bag look of this client")
+  ThemeRadio("modern", "Modern - flat dark panel, square cells")
+  th:Finish()
+
+  -- Section: Bag types
+  local bt = Section("Bag types")
+  bt:Add(Check(bt, "kindTint", "Tint the border of quiver, herb, soul (and other special bag) slots",
+    "Special bags are drawn as one row above your normal items. The tint says which kind each slot is: orange ammo, green herb, purple soul, blue enchanting, bronze mining, gold keyring, teal reagent.",
+    function() ns.Window.Render() end), 26)
+  bt:Finish()
+
+  -- Section: Edit Mode (informational + reset)
+  local em = Section("Window")
+  local note = em:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  note:SetWidth(BOX_W - 2 * PAD); note:SetJustifyH("LEFT")
+  note:SetText("Position, scale and column count live in Edit Mode (Game Menu > Edit Mode): drag the KondoBags frame, or drag its corner grip to change the number of columns.")
+  em:Add(note, 30, -6, 4)
+  local reset = CreateFrame("Button", nil, em, "UIPanelButtonTemplate")
+  reset:SetSize(160, 22); reset:SetText("Reset to 10 columns")
+  reset:SetScript("OnClick", function() if ns.EnsureBag then ns.EnsureBag():SetColumns(10) end end)
+  em:Add(reset, 22, -8, 4)
+  em:Finish()
+  local lastSection = em
+
+  local function LayoutContentHeight()
+    local top, bottom = content:GetTop(), lastSection:GetBottom()
+    if top and bottom then content:SetHeight(top - bottom + 24) end
+  end
+
+  -- Walk nested children so widgets inside section boxes get refreshed too.
+  local function UpdateTree(frame)
+    for _, child in ipairs({ frame:GetChildren() }) do
+      if child.Update then child:Update() end
+      UpdateTree(child)
+    end
+  end
+  optionsFrame.Update = function()
+    UpdateTree(content)
+    LayoutContentHeight()
+  end
+  optionsFrame:SetScript("OnShow", optionsFrame.Update)
+
+  if Settings and Settings.RegisterCanvasLayoutCategory then
+    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsFrame, "KondoBags")
+    Settings.RegisterAddOnCategory(optionsCategory)
+  elseif InterfaceOptions_AddCategory then
+    InterfaceOptions_AddCategory(optionsFrame)
+  end
+  return optionsFrame
+end
+
+function Options.Setup() CreateOptions() end
+
+function Options.Open()
+  CreateOptions()
+  if Settings and Settings.OpenToCategory and optionsCategory then Settings.OpenToCategory(optionsCategory:GetID())
+  elseif InterfaceOptionsFrame_OpenToCategory then InterfaceOptionsFrame_OpenToCategory(optionsFrame); InterfaceOptionsFrame_OpenToCategory(optionsFrame) end
+end

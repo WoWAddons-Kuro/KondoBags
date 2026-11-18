@@ -18,10 +18,10 @@ read_globals = {
     "ceil", "floor", "max", "min",
 
     -- WoW API
-    "CreateFrame", "UIParent", "GameTooltip", "GameTooltip_Hide", "GetTime", "C_Timer",
+    "CreateFrame", "UIParent", "WorldFrame", "GameTooltip", "GameTooltip_Hide", "GetTime", "C_Timer",
     "InCombatLockdown", "hooksecurefunc", "IsShiftKeyDown", "IsAltKeyDown", "IsControlKeyDown",
     "GetCursorInfo", "CursorHasItem", "ClearCursor", "GetCursorPosition", "SetCursor", "ResetCursor",
-    "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL",
+    "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL", "YES", "NO",
     "C_Container", "C_Item", "C_AddOns", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
     "SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated",
     "NineSliceUtil", "NineSliceLayouts",

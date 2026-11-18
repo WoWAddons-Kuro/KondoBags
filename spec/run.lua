@@ -309,11 +309,17 @@ test("typed slots: one run above incoming, mixed kinds, do not shift the general
   eq(rows[1].cells[1].slotKind, "quiver"); eq(rows[1].cells[3].slotKind, "herb")
   eq(rows[1].cells[3].ref.item.itemID, 900)
   ok(not rows[2].typed, "incoming follows")
-  -- pins to/from typed cells are refused
+  -- pins to/from typed cells are refused and the held item is released (never stuck on the cursor)
   ok(bag:Pickup(bag.typedSlots[1]))
-  ok(not bag:Drop(LockCell(bag)), "typed item cannot be pinned"); bag:ClearCursor()
+  ok(not bag:Drop(LockCell(bag)), "typed item cannot be pinned"); ok(bag.held == nil, "released")
   ok(bag:Pickup(bag.slots[1]))
-  ok(not bag:Drop(rows[1].cells[2]), "general item cannot be dropped on a typed cell")
+  ok(not bag:Drop(rows[1].cells[2]), "general item cannot be dropped on a typed cell"); ok(bag.held == nil)
+  -- same-kind typed <-> typed is a stock swap/place; cross-kind is refused
+  ok(bag:Pickup(bag.typedSlots[1]))                                     -- herb item 900
+  ok(bag:Drop(rows[1].cells[2]), "herb -> empty herb slot")             -- cells[2] = herb slot 2 (empty)
+  eq(bag.typedSlots[2].item.itemID, 900); ok(bag.typedSlots[1].item == nil)
+  ok(bag:Pickup(bag.typedSlots[3]))                                     -- quiver item
+  ok(not bag:Drop(rows[1].cells[3]), "quiver -> herb slot refused")
 end)
 
 -- ---------------------------------------------------------------------------

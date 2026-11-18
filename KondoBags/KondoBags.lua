@@ -84,6 +84,8 @@ local function Slash(msg)
     ns.Window.Hide()
     if wasShown then OpenMock() end
     Print("mock sections and items reset")
+  elseif cmd == "options" or cmd == "config" or cmd == "settings" then
+    ns.Options.Open()
   elseif cmd == "status" then
     local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")
     local n = #KondoBagsCharDB.mockSections.list
@@ -105,6 +107,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     SlashCmdList.KONDOBAGS = Slash
   elseif event == "PLAYER_LOGIN" then
     ns.EditMode.Setup()
+    ns.Options.Setup()
     Print("M0 mockup loaded. /kondo to open, /kondo theme modern, /kondo status")
   end
 end)

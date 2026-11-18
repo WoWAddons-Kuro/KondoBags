@@ -184,11 +184,19 @@ end
 function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
-  -- Typed (restricted-bag) slots are display-only: no pin, no cross-kind move. Stock handles them.
-  if held.kind and held.kind ~= "general" then return false end
-  if cell.typed then return false end
-  local heldKept = Sections.IsKept(self.store, held.slotIndex)
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
+  local function refuse() self.held = nil; CloseCursorGap(self); self:Emit("cursor"); return false end
+  -- Typed (restricted-bag) slots: no pin and no cross-kind move. Within the typed run a stock
+  -- swap/place between two slots of the SAME kind is allowed; anything else puts the item back.
+  local heldTyped = held.kind ~= nil and held.kind ~= "general"
+  if heldTyped or cell.typed then
+    local target = cell.kind == Layout.CELL_SLOT and cell.ref or nil
+    if not target or target == held then return refuse() end
+    if not heldTyped or not cell.typed or target.kind ~= held.kind then return refuse() end
+    held.item, target.item = target.item, held.item          -- M4: PickupContainerItem pair
+    return done()
+  end
+  local heldKept = Sections.IsKept(self.store, held.slotIndex)
 
   -- Group targets: lock cell, the cursor gap, or any group cell while Shift is down (D12: all groups
   -- share ONE physical keep range, so any group can be pinned into or reordered across).
