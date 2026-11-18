@@ -170,6 +170,31 @@ test("bagstate: dragging within a section reorders it; item lands where the targ
   eq(hs.slot, 1, "no physical move"); eq(apple.slot, 3)
 end)
 
+test("bagstate: dragging a kept item onto a loose cell unpins it (and swaps physically)", function()
+  local hs, empty, apple = Ref(0, 1, 6948), Ref(0, 2), Ref(0, 3, 4536)
+  local st = NewState({ hs, empty, apple })
+  local function looseCell(ref) return { kind = L.CELL_SLOT, ref = ref } end          -- no sectionID = loose area
+  -- hearthstone -> empty loose slot: leaves Keep, lands in slot 2
+  st:Pickup(hs); ok(st:Drop(looseCell(empty)))
+  ok(not st:SectionOf(6948), "no longer kept")
+  ok(hs.item == nil and empty.item.itemID == 6948, "moved into slot 2")
+  eq(#st.store.list, 1, "Keep section itself remains (empty, with its lock cell)")
+  -- re-pin via lock, then swap a LOOSE item onto the KEPT one: normal swap, the kept item stays kept
+  st:Pickup(empty); ok(st:Drop({ kind = L.CELL_DROP, sectionID = "s1" }))
+  ok(st:SectionOf(6948))
+  st:Pickup(apple); ok(st:Drop({ kind = L.CELL_SLOT, ref = empty, sectionID = "s1" }))   -- the hs cell, in Keep
+  ok(empty.item.itemID == 4536 and apple.item.itemID == 6948, "physical swap")
+  ok(st:SectionOf(6948) and not st:SectionOf(4536), "pin followed the hearthstone; apple not kept")
+end)
+
+test("bagstate: dragging a loose item onto a loose item swaps as before", function()
+  local a, b = Ref(0, 1, 10), Ref(0, 2, 11)
+  local st = NewState({ a, b })
+  st:Pickup(a); ok(st:Drop({ kind = L.CELL_SLOT, ref = b }))
+  ok(a.item.itemID == 11 and b.item.itemID == 10)
+  ok(not st:SectionOf(10) and not st:SectionOf(11))
+end)
+
 test("bagstate: Shift-drag opens a phantom insert cell at the hover and dropping lands there", function()
   local hs, cloth, apple = Ref(0, 1, 6948), Ref(0, 2, 2589), Ref(0, 3, 4536)
   local st, events = NewState({ hs, cloth, apple })

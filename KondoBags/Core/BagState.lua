@@ -17,6 +17,10 @@
 --
 --   Drop targets (KondoBags_LayoutCell.kind):
 --     drop  -> pin held item into cell.sectionID  (logical; the item does not move)
+--     slot  -> same section as the held item: reorder (logical, nothing moves physically);
+--              otherwise: stock physical swap/place. Pins follow the item, not the slot, so a
+--              kept item swapped into the loose area stays kept -- unless it was dragged onto
+--              a loose cell, which means "stop keeping it" (unpin).
 --     slot  -> physical swap/place with that slot (stock behaviour)
 
 local _, ns = ...
@@ -162,13 +166,21 @@ function BagState:Drop(cell)
   elseif cell.kind == Layout.CELL_SLOT and cell.ref then
     local target = cell.ref
     if target ~= held then
-      local heldSec = Sections.SectionOf(self.store, held.item.itemID)
+      local heldID = held.item.itemID
+      local heldSec = Sections.SectionOf(self.store, heldID)
       local targetSec = target.item and Sections.SectionOf(self.store, target.item.itemID)
       if heldSec and heldSec == targetSec then
         -- both kept in the same section: reorder the row (logical); the held item lands where the
         -- target was and nothing moves physically
-        Sections.MoveBefore(self.store, held.item.itemID, target.item.itemID)
+        Sections.MoveBefore(self.store, heldID, target.item.itemID)
       else
+        -- Across the section boundary (either direction) or into the loose area: a stock
+        -- physical swap/place. Pins follow the ITEM, not the slot, so a kept item swapped with a
+        -- loose one stays kept wherever it ends up -- EXCEPT when the player drags a kept item
+        -- onto a loose cell with nothing kept there: that gesture means "stop keeping it".
+        if heldSec and not cell.sectionID then
+          Sections.Unpin(self.store, heldID)
+        end
         target.item, held.item = held.item, target.item    -- mock physical swap/place
       end
     end
