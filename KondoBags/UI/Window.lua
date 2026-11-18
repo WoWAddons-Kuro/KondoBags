@@ -372,13 +372,19 @@ local function DressCell(b, cell, theme)
   if theme.slotFlat then b.bg:SetColorTexture(unpack(theme.slotFlat)); b.bg:Show() else b.bg:Hide() end
   -- Restricted-bag cell: subtle tint per slot kind (KondoBagsDB.kindTint toggles it). With stock slot
   -- art the tint colours the rounded Quickslot border itself; the flat theme tints its 1px ring.
+  -- On secure cells the Quickslot tint is applied AFTER the stock helpers below: SetItemButtonQuality
+  -- resets the NormalTexture vertex colour to white, which wiped the tint on every cell but the first.
   local tint = cell.slotKind and theme.kindTint and theme.kindTint[cell.slotKind]
   if tint and KondoBagsDB and KondoBagsDB.kindTint == false then tint = nil end
+  local normalTint
   if tint and theme.slotNormal and b.normal then
     local r, g, bl, a = unpack(tint)
     a = a or 1
-    b.normal:SetVertexColor(1 - (1 - r) * a, 1 - (1 - g) * a, 1 - (1 - bl) * a)   -- blend toward the kind colour
+    normalTint = { 1 - (1 - r) * a, 1 - (1 - g) * a, 1 - (1 - bl) * a }         -- blend toward the kind colour
     tint = nil                                                                   -- no square edges on classic
+  end
+  local function ApplyNormalTint()
+    if normalTint and b.normal then b.normal:SetVertexColor(unpack(normalTint)) end
   end
   for _, e in ipairs(b.edges) do
     if tint then e:SetColorTexture(unpack(tint)); e:Show()
@@ -399,6 +405,7 @@ local function DressCell(b, cell, theme)
     SetItemButtonCount(b, item and item.count or 0)
     SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
     SetItemButtonDesaturated(b, item and item.locked or false)
+    ApplyNormalTint()                                -- after SetItemButtonQuality, which whitens NormalTexture
     -- The template owns a "new item" glow (NewItemTexture + newitemglowAnim/flashAnim) that only
     -- stock's UpdateItems drives; left alone it can show on every cell. We draw it ourselves:
     -- glow only when the client flags the slot new (looted this session), exactly like stock.
@@ -422,6 +429,7 @@ local function DressCell(b, cell, theme)
     end
     return
   end
+  ApplyNormalTint()
   b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.dim:Hide()
   if cell.kind == Layout.CELL_SLOT then
     local item = cell.ref and cell.ref.item
