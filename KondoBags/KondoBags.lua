@@ -190,6 +190,16 @@ local function Slash(msg)
     Print("sections reset")
   elseif cmd == "options" or cmd == "config" or cmd == "settings" then
     ns.Options.Open()
+  elseif cmd == "cursor" then
+    -- Debug: what the client says about the carried item vs each typed bag kind.
+    local kind, itemID, link = GetCursorInfo()
+    if kind ~= "item" then Print("cursor: nothing carried"); return end
+    local fam = ns.Client.Active().ItemFamily(link or itemID)
+    local fits = {}
+    for _, k in ipairs({ "quiver", "ammo", "soul", "herb", "enchanting", "mining", "keyring", "reagent" }) do
+      fits[#fits + 1] = k .. "=" .. (ns.Client.ItemFitsKind(fam, k) and "yes" or "no")
+    end
+    Print("cursor: %s family=%s | %s", tostring(link or itemID), tostring(fam), table.concat(fits, " "))
   elseif cmd == "status" then
     local version = (C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata)(ADDON_NAME, "Version")
     local b = EnsureBag()

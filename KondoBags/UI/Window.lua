@@ -715,7 +715,10 @@ function Window.ApplySearch(text)
       if b:IsShown() and b.cell and b.cell.kind == Layout.CELL_SLOT and b.cell.ref and b.cell.ref.item then
         local name = b.cell.ref.item.name
         local miss = text ~= "" and (not name or not name:lower():find(text, 1, true))
-        if b.dim then b.dim:SetShown(miss) end
+        -- The dim also serves the "won't take the carried item" mark on occupied typed cells
+        -- (SetNoDrop); the search must not undo it. ApplySearch runs after every DressCell.
+        local refuses = b.noDrop ~= nil and b.noDrop:IsShown()
+        if b.dim then b.dim:SetShown(miss or refuses) end
         if b.secure then SetItemButtonDesaturated(b, miss or b.cell.ref.item.locked) else b.icon:SetDesaturated(miss) end
       end
     end
