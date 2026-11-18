@@ -50,6 +50,7 @@ The design goal is the smallest possible configuration surface and the least ado
 | D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. |
 | D12 | **One physical Keep range, many visual groups.** Physically there are exactly two ranges: incoming (`0 .. boundary-1`) and Keep (`boundary .. N-1`), with ONE boundary and the D11 grow/shrink rule. The UI "sections" below incoming are **groups**: named lists of Keep slots (`{ id, name, order }`) that together partition the Keep range. A `+` button (right of the search box) adds a new empty group. Dropping on group G's lock pins via D11 and records the new slot in `G.order`. When a shrink slides the lowest-slot item into a hole, the slot is renamed in whichever group's `order` held it, so visual membership follows the item. Incoming is always drawn first. | Owner, 2026-11-18. Keeps the loot invariant trivially (one boundary) and makes `+` a pure UI feature. |
 | D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; pinning SHIFTS incoming down (the one unavoidable incoming reshuffle); restricted bag types are extra incoming runs, no Keep for them; bag swaps move nothing because Keep positions are an indirection map. | Owner, 2026-11-18. |
+| D14 | **Live cursor model.** Item cells are `ContainerFrameItemButtonTemplate`; **Blizzard owns every slot-to-slot gesture** (pickup, swap, split, use, sell) and we observe the result on `BAG_UPDATE_DELAYED`. We own only the gestures that have no stock meaning: drop on a **lock** / **cursor gap** (pin or reorder) and `+` / remove group. `BagState.held` is a VIEW of `GetCursorInfo()`, not our own state. An **external** cursor item (bank, mail, trade, guild bank: not in our general flat list) dropping on a lock is `PinFromIncoming(fromSlot = nil)`: it needs a free general slot; **when there is none the lock and gap cells are hidden** while that cursor is held. | Owner + assistant, 2026-11-18. Keeps every stock behaviour exactly stock, in and out of combat, and keeps the pin math (D11–D13) untouched. |
 
 ## Architecture
 
@@ -249,6 +250,7 @@ Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`
 | Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
 | Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
 | Drop loose `l` (slot `s_l`) on a section's **lock cell** | `e` = highest free incoming slot above `s_l`, else `s_l`; move `s_l → e` if different; then for `s = e .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order; the hole moves from `e` to `s_l` (D13.2). Zero moves if `s_l == boundary-1`; one move if `boundary-1` is free. |
+| Drop **EXTERNAL** item (cursor from bank / mail / trade; not in our flat list) on a lock or gap | needs a free general slot: `e` = highest free incoming slot; place cursor → `e`; then the same chain-shift to `boundary-1`; `boundary -= 1`; `order` gains it | item lands in the group. **No free slot → the lock and gap cells are hidden** while that cursor is held (`Layout` input `hideLocks`); the drop has nowhere to go, like stock. (D14) |
 | Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
 | **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
 | Loose on loose / empty | stock swap/place | stock |
@@ -340,24 +342,51 @@ Each phase ends with something usable in play, and nothing is built before the l
 
 Exit criteria: owner looks at it on both clients and signs off on frame art, spacing, cell art, lock cell. Screenshots saved to `docs/`.
 
-### Phase 1 — Dev loop and bag model (M1)
+### Phase L — Live bags (replaces M1 + M4; one phase, five shippable steps)
 
-- [ ] `Client/` provider interface, Era and Mainline providers, Mock provider over fixtures
-- [ ] Scanner producing a `KondoBags_Snapshot`; slot-kind detection; async item completion
-- [ ] `/kondo dump` writes the current snapshot to SavedVariables; a script copies it into `spec/fixtures/`
-- [ ] `spec/run.lua` harness under `lua5.1`: loads fixtures through the Mock provider, runs Reconcile + Partition + Layout, asserts the picture
+M1's fixtures and `/kondo dump` existed to test a classifier that no longer exists; what is left of M1
+(provider + scanner) only has value once the window draws it. Each step below ends with something you
+can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we own lock/gap drops.
 
-Exit criteria: tests run in about a second with no game running; addon loads on Era and Forever with no errors; dumped snapshot matches the bags by hand count, including per-kind free slots.
+**Step 1 — Client provider** (`Client/Client.lua`, `Era.lua`, `Mainline.lua`, `Mock.lua`)
 
-### Phase 4 — Bag window live (M4)
+- [ ] `KondoBags_ClientProvider = { name, BagIDs, NumSlots, FreeSlots, SlotInfo, BagKind, Pickup, InCombat }`
+      (`SlotInfo(bag, slot) -> KondoBags_RawSlotInfo { itemID, link, icon, count, quality, locked, name }`)
+- [ ] `BagKind(bag) -> KondoBags_SlotKind` from the `GetContainerNumFreeSlots` bag-family bitmask + `Enum.BagIndex.ReagentBag`
+- [ ] selection at load from `WOW_PROJECT_ID` with capability checks; Mock provider over a ref table for `spec/run.lua`
+- Research first: bag-family bit values on Era vs Forever (`_ref/blizzard/classic_era/ContainerDocumentation.lua`, wiki) → `_EXTERNAL_APIS/`
 
-- [ ] Layout solver in `Core/Layout.lua` (sections and strips in, cell rectangles out), with tests
-- [ ] Secure button pool; combat-deferred layout
-- [ ] Mock renderer replaced by live snapshot; `Mock/` removed from the TOC
-- [ ] Replace default bags: toggle hooks and keybinds
-- [ ] Drop-to-pin and modifier-click pin through `C_Container.PickupContainerItem`; "kept in <group>" tooltip line
+**Step 2 — Scanner, read-only live window** (`Core/Scan.lua`)
 
-Exit criteria: right-click use, drag, split-stack, vendor sell and trade all work from the window, in and out of combat; default bags not needed in normal play.
+- [ ] `Scan.Refs(provider) -> { KondoBags_SlotRef... }`: general bags in `Enum.BagIndex` order (= the flat index), typed bags with `ref.kind`; same shape `Mock.Slots()` emits today, so `BagState`/`Layout`/`Window` change nothing
+- [ ] `KondoBags.lua`: `BAG_UPDATE(bag)` marks dirty → `BAG_UPDATE_DELAYED` scans → `BagState:SetSlots`; `ITEM_LOCK_CHANGED` → per-cell redraw
+- [ ] async names: `Item:CreateFromBagAndSlot():ContinueOnItemLoad` fills `name` for search (verify on Era)
+- Milestone: `/kondo` shows the real bags, read-only; `/kondo mock` keeps the mockup
+
+**Step 3 — Secure cells**
+
+- [ ] `CELL_SLOT` buttons become `ContainerFrameItemButtonTemplate`, one hidden per-bag parent frame (`SetID(bag)`), cell `SetID(slot)`, re-parented at render; lock / gap cells stay plain Buttons
+- [ ] combat: `InCombatLockdown()` → defer render to `PLAYER_REGEN_ENABLED`; icon/count/dim updates still run
+- [ ] dress through the stock helpers (`SetItemButtonTexture/Count/Quality/Desaturated`, `searchOverlay`); our ring/tint/glyph regions layer on top
+- Milestone: right-click use, drag, split, vendor sell, trade all work from our window
+
+**Step 4 — Pins live**
+
+- [ ] `BagState.held` becomes a view of `GetCursorInfo()`: `SetCursor(ref | "external" | nil)` on `CURSOR_CHANGED` / `ITEM_LOCK_CHANGED`; `Pickup`/`ClearCursor` and the mock carry icon go
+- [ ] `Core/MoveQueue.lua` (pure Lua, tested): `ApplyMoves` issues one `Pickup(a); Pickup(b)` pair at a time, waits for `ITEM_LOCK_CHANGED` / `BAG_UPDATE_DELAYED` before the next, aborts if the cursor is lost
+- [ ] `Reconcile` returns follow-up moves: a Keep slot emptied by a stock drag is refilled from Keep's lowest slot and that slot released (D13.1)
+- [ ] external cursor (D14): `PinFromIncoming(nil)` when a general slot is free; `Layout` input `hideLocks` when none
+- [ ] Shift-insert: `PreClick` on the secure button + `ClearCursor()` to pre-empt the template when `IsShiftKeyDown()` and an item is held — **verify in game**; if it cannot pre-empt, M4 ships with "drop on lock = front, kept-on-kept = reorder" and Shift-insert waits
+- Milestone: pin, unpin, reorder, `+` / remove group on real items; Keep survives `/reload`
+
+**Step 5 — Replace the default bags**
+
+- [ ] hook `ToggleBackpack`, `ToggleAllBags`, `OpenAllBags`, `CloseAllBags`, `OpenBackpack`, `CloseBackpack`, `ToggleBag(id)`; stock frames hidden; `Mock/` out of the TOC
+- Milestone: default bags not needed in normal play
+
+Exit criteria (whole phase): right-click use, drag, split-stack, vendor sell and trade all work from the window, in and out of combat; pins survive reload; an external item pins when a slot is free and has nowhere to land when none is.
+
+Tests added in `spec/run.lua`: Mock provider → `Scan.Refs` (typed/general split, flat index = bag order); `MoveQueue` sequencing / lock-wait / abort; `Reconcile` follow-up moves for an externally emptied Keep slot; `hideLocks` emits no `CELL_DROP`/`CELL_GAP`.
 
 ### Phase 5 — Themes (M5) · Phase 6 — Keep special cases (M6) · Phase 7 — Late stage (M7)
 
