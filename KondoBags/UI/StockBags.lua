@@ -83,29 +83,38 @@ end
 -- R1: toggle hooks, deduped by debugstack like BagBrother
 -- ---------------------------------------------------------------------------
 local function HookToggles()
+  -- Stock's own toggles call CloseAllBags() internally (ToggleBackpack_Individual when the invisible
+  -- stock backpack is "open"). Our CloseAllBags hook closes the window THEN the Toggle* hook fires and
+  -- would reopen it, so the first B after /reload did nothing. A toggle whose stock body already closed
+  -- our window is finished: the CloseAllBags hook sets closedByStock and the toggle hook consumes it.
+  -- (No debugstack matching for Escape: CloseAllWindows is reached via securecallfunction and its name
+  -- is not visible in the stack from inside the hook, so a positive match swallowed Escape.)
+  local closedByStock = false
+  local function Toggle()
+    if closedByStock then closedByStock = false; return end
+    ns.ToggleBags()
+  end
   hooksecurefunc("ToggleAllBags", function()
-    if not debugstack():find("Manager") then ns.ToggleBags() end
+    if not debugstack():find("Manager") then Toggle() else closedByStock = false end
   end)
   hooksecurefunc("ToggleBackpack", function()
     local s = debugstack()
-    if not s:find("ToggleAllBags") and not s:find("Manager") then ns.ToggleBags() end
+    if not s:find("ToggleAllBags") and not s:find("Manager") then Toggle() end
   end)
   hooksecurefunc("ToggleBag", function(bagID)
-    if not StockBags.IsOurBag(bagID) then return end
+    if not StockBags.IsOurBag(bagID) then closedByStock = false; return end
     local s = debugstack()
-    if not s:find("OpenBackpack") and not s:find("ToggleBackpack") and not s:find("Manager") then ns.ToggleBags() end
+    if not s:find("OpenBackpack") and not s:find("ToggleBackpack") and not s:find("Manager") then Toggle() end
   end)
   -- Escape: CloseAllWindows -> CloseAllBags() with no frame. Frame-scoped calls are panel bookkeeping
-  -- (merchant/mail closing "their" bags) and are covered by the interaction events below. Stock's own
-  -- toggles also call CloseAllBags internally (ToggleBackpack_Individual when the invisible stock
-  -- backpack is "open"); those are already handled by the toggle hooks above, so skip them here or the
-  -- window closes and is toggled straight back open (the "first B after /reload does nothing" bug).
-  -- Positive match on the Escape path (UIParentPanelManager.lua: CloseAllWindows -> CloseAllBags) rather
-  -- than a negative match on toggle names, which also swallowed Escape.
+  -- (merchant/mail closing "their" bags) and are covered by the interaction events below.
   hooksecurefunc("CloseAllBags", function(frame)
     if frame ~= nil then return end
-    local s = debugstack()
-    if s:find("CloseAllWindows") then ns.CloseBags() end
+    if ns.Window.IsShown() then
+      ns.CloseBags()
+      closedByStock = true          -- consumed by a Toggle* hook on the same call, else cleared below
+      C_Timer.After(0, function() closedByStock = false end)
+    end
   end)
 end
 
