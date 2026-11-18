@@ -205,36 +205,6 @@ end
 
 -- Mock-only: an icon that rides the mouse while the controller holds an item, standing in for the
 -- client's real cursor item (which only C_Container.PickupContainerItem can produce). Removed in M4.
-local carry
-local function Carry_Update()
-  if not carry then return end
-  local x, y = GetCursorPosition()
-  local s = UIParent:GetEffectiveScale()
-  carry:ClearAllPoints()
-  carry:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x / s + 14, y / s - 14)
-end
-local function Carry_Sync()
-  local item = view.bag and view.bag:HeldItem()
-  if not item then
-    if carry then carry:Hide() end
-    ResetCursor()
-    return
-  end
-  if not carry then
-    carry = CreateFrame("Frame", "KondoBagsMockCarry", UIParent)
-    carry:SetSize(30, 30)
-    carry:SetFrameStrata("TOOLTIP")
-    carry.icon = carry:CreateTexture(nil, "OVERLAY")
-    carry.icon:SetAllPoints()
-    carry.icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-    carry:SetScript("OnUpdate", Carry_Update)
-  end
-  carry.icon:SetTexture(item.icon)
-  carry:SetAlpha(0.85)
-  Carry_Update()
-  carry:Show()
-end
-
 -- ---------------------------------------------------------------------------
 -- cells
 -- ---------------------------------------------------------------------------
@@ -289,7 +259,9 @@ local function NewSecureCell(i, bagID)
   b:HookScript("OnEnter", function(self)
     if self.cell and view.bag then view.hoverButton = self; view.bag:SetHover(self.cell) end
   end)
-  b:HookScript("OnLeave", function(self) if view.hoverButton == self then view.hoverButton = nil; if view.bag then view.bag:SetHover(nil) end end end)
+  b:HookScript("OnLeave", function(self)
+    if view.hoverButton == self then view.hoverButton = nil; if view.bag then view.bag:SetHover(nil) end end
+  end)
   return b
 end
 
@@ -339,6 +311,42 @@ local function SetGlyph(b, g)
   local inset = g.inset or 0
   b.emptyIcon:SetPoint("TOPLEFT", inset, -inset); b.emptyIcon:SetPoint("BOTTOMRIGHT", -inset, inset)
   b.emptyIcon:Show()
+end
+
+-- Quest item highlight on a secure cell (SPECS/01 "Quest item highlight"). Stock's rule verbatim:
+-- "!" when the item STARTS a quest not yet accepted (questID and not isActive), the yellow border
+-- when it is a quest item or belongs to an active quest, nothing otherwise. Era's stock bags hide
+-- this texture; we draw it on every client. A slow alpha pulse makes it read without shouting.
+local function QuestPulse(b, theme)
+  if b.questPulse then return b.questPulse end
+  local tex = b.IconQuestTexture
+  local ag = tex:CreateAnimationGroup()
+  ag:SetLooping("REPEAT")
+  local half = (theme.questPulsePeriodSec or Theme.QUEST_PULSE_PERIOD_SEC) / 2
+  local lo = theme.questPulseMinAlpha or Theme.QUEST_PULSE_MIN_ALPHA
+  local function Leg(order, from, to)
+    local a = ag:CreateAnimation("Alpha")
+    a:SetOrder(order); a:SetDuration(half); a:SetFromAlpha(from); a:SetToAlpha(to); a:SetSmoothing("IN_OUT")
+  end
+  Leg(1, 1, lo); Leg(2, lo, 1)
+  b.questPulse = ag
+  return ag
+end
+
+local function SetQuestHighlight(b, quest, theme)
+  local tex = b.IconQuestTexture
+  if not tex then return end
+  local file
+  if quest and quest.questID and not quest.isActive then file = TEXTURE_ITEM_QUEST_BANG
+  elseif quest and (quest.questID or quest.isQuestItem) then file = TEXTURE_ITEM_QUEST_BORDER end
+  if file then
+    tex:SetTexture(file); tex:Show()
+    local ag = QuestPulse(b, theme)
+    if not ag:IsPlaying() then ag:Play() end
+  else
+    if b.questPulse and b.questPulse:IsPlaying() then b.questPulse:Stop() end
+    tex:SetAlpha(1); tex:Hide()
+  end
 end
 
 local function DressCell(b, cell, theme)
@@ -402,6 +410,8 @@ local function DressCell(b, cell, theme)
       else b.newitemglowAnim:Stop() end
     end
     if b.flashAnim and not isNew then b.flashAnim:Stop() end
+    -- Quest item highlight: stock's border / "!" on the template's IconQuestTexture, pulsing slowly.
+    SetQuestHighlight(b, item and item.quest or nil, theme)
     -- Empty slot: the template leaves its icon region shown with no file; hide it so the glyph reads.
     if b.icon then b.icon:SetShown(item ~= nil) end
     if not item then
@@ -441,50 +451,17 @@ end
 Cell_OnClick = function(b, button)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
-  if bag.live then
-    -- D14: only lock / gap cells are ours on the live bag. Left with an item on the cursor = pin or
-    -- reorder; right-click on a lock with an empty cursor = the group menu. Everything else is stock.
-    if button == "RightButton" then
-      if cell.kind == Layout.CELL_DROP and not CursorHasItem() then Window.ShowGroupMenu(b, cell.sectionID) end
-      return
-    end
-    if CursorHasItem() and bag.held then bag:Drop(cell) end
-    return
-  end
+  -- D14: only lock / gap cells are ours. Left with an item on the cursor = pin or reorder; right-click
+  -- on a lock with an empty cursor = the group menu. Slot gestures are Blizzard's (secure buttons).
   if button == "RightButton" then
-    -- Right-click while carrying always cancels the carry (stock behaviour), nothing else.
-    if bag:HeldItem() then bag:ClearCursor(); return end
-    if cell.kind == Layout.CELL_DROP then Window.ShowGroupMenu(b, cell.sectionID) end
+    if cell.kind == Layout.CELL_DROP and not CursorHasItem() then Window.ShowGroupMenu(b, cell.sectionID) end
     return
   end
-  if bag:HeldItem() then bag:Drop(cell); return end
-  if cell.kind == Layout.CELL_SLOT and cell.ref then bag:Pickup(cell.ref) end
+  if CursorHasItem() and bag.held then bag:Drop(cell) end
 end
 
 -- Clicking the 3D world while carrying: right = cancel, left = the stock "destroy item?" dialog.
 -- Mock-only (M4 uses the real cursor and Blizzard's own dialog). One WorldFrame hook, installed once.
-StaticPopupDialogs["KONDOBAGS_MOCK_DESTROY"] = {
-  text = "Do you want to destroy %s?",
-  button1 = YES, button2 = NO,
-  OnAccept = function()
-    local bag = view.bag
-    if bag and bag.held then bag.held.item = nil; bag:ClearCursor(); bag:Emit("changed") end
-  end,
-  OnCancel = function() if view.bag then view.bag:ClearCursor() end end,
-  timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-}
-local function InstallWorldClickHook()
-  if view.worldHooked or not WorldFrame then return end
-  view.worldHooked = true
-  WorldFrame:HookScript("OnMouseDown", function(_, button)
-    local bag = view.bag
-    local item = bag and bag:HeldItem()
-    if not item then return end
-    if button == "RightButton" then bag:ClearCursor()
-    elseif button == "LeftButton" then StaticPopup_Show("KONDOBAGS_MOCK_DESTROY", item.name) end
-  end)
-end
-
 -- Right-click menu on a group's lock cell. One item for now: remove the group (items -> incoming).
 function Window.ShowGroupMenu(anchor, sectionID)
   local bag = view.bag
@@ -505,14 +482,11 @@ end
 
 Cell_OnReceiveDrag = function(b)
   if not b.cell or not view.bag then return end
-  if view.bag.live then if CursorHasItem() and view.bag.held then view.bag:Drop(b.cell) end else view.bag:Drop(b.cell) end
+  if CursorHasItem() and view.bag.held then view.bag:Drop(b.cell) end
 end
 
-Cell_OnDragStart = function(b)
-  local cell, bag = b.cell, view.bag
-  if bag and bag.live then return end                      -- live slots are secure buttons; locks don't drag
-  if cell and bag and cell.kind == Layout.CELL_SLOT and cell.ref and not bag:HeldItem() then bag:Pickup(cell.ref) end
-end
+-- Slots are secure buttons (Blizzard drags them); our plain cells are locks and gaps, which do not drag.
+Cell_OnDragStart = function() end
 
 Cell_OnEnter = function(b)
   local cell, bag = b.cell, view.bag
@@ -531,7 +505,6 @@ Cell_OnEnter = function(b)
     GameTooltip:SetText(it.name, QualityColor(it.quality))
     local s = bag:SectionOfRef(cell.ref)
     if s then GameTooltip:AddLine("KondoBags: kept in " .. ((s.name ~= "" and s.name) or s.id), 0.6, 0.8, 1) end
-    GameTooltip:AddLine(string.format("bag %d slot %d (mock)", cell.ref.bagID, cell.ref.slot), 0.5, 0.5, 0.5)
   else
     GameTooltip:Hide(); return
   end
@@ -652,7 +625,6 @@ function Window.Render()
   view.renderDeferred = false
 
   Window.ApplySearch(frame.Search:GetText())
-  Carry_Sync()
   if ns.EditMode then ns.EditMode.OnWindowResized(w, h) end
 end
 
@@ -704,7 +676,6 @@ function Window.Attach(opts)
     view.bag:AddListener(OnBagEvent)
     view.bag:SetInsertMode(IsShiftKeyDown())
   end
-  InstallWorldClickHook()
   -- Combat: a layout change requested mid-combat is deferred by Render; replay it when combat ends.
   if not view.regenFrame then
     view.regenFrame = CreateFrame("Frame")
@@ -743,14 +714,20 @@ function Window.SetMoney(copper)
   if frame and frame.Money then frame.Money:SetText(FormatMoney(view.money)) end
 end
 function Window.Frame() return frame end
-function Window.Show() CreateWindow(); Window.Render(); frame:Show() end
+function Window.Show()
+  CreateWindow(); Window.Render()
+  if frame:IsShown() then return end
+  frame:Show()
+  if ns.StockBags then ns.StockBags.OnWindowShown(true) end     -- bag-bar highlight + open sound (SPECS/01 R7)
+end
 function Window.Hide()
-  if frame then frame:Hide() end
-  if view.bag and view.bag.live then if ns.ClearNewItems then ns.ClearNewItems() end
-  elseif view.bag then view.bag:ClearCursor() end
+  if not (frame and frame:IsShown()) then return end
+  frame:Hide()
+  if ns.ClearNewItems then ns.ClearNewItems() end                -- stock clears "new" flags on bag hide; so do we
+  if ns.StockBags then ns.StockBags.OnWindowShown(false) end
 end
 function Window.Toggle() if frame and frame:IsShown() then Window.Hide() else Window.Show() end end
-function Window.IsShown() return frame and frame:IsShown() end
+function Window.IsShown() return frame ~= nil and frame:IsShown() end
 
 -- Size the window would have at `columns` for the current data (for Edit Mode snapping).
 function Window.SizeForColumns(columns)

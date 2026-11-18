@@ -45,6 +45,14 @@ function P.SlotInfo(bag, slot)
   }
 end
 
+-- KondoBags_QuestFlags for the quest highlight; nil when the client has no quest info API.
+function P.QuestInfo(bag, slot)
+  if not C_Container.GetContainerItemQuestInfo then return nil end
+  local q = C_Container.GetContainerItemQuestInfo(bag, slot)
+  if not q or not (q.isQuestItem or q.questID) then return nil end
+  return { isQuestItem = q.isQuestItem or false, questID = q.questID, isActive = q.isActive or false }
+end
+
 function P.Pickup(bag, slot) C_Container.PickupContainerItem(bag, slot) end
 function P.InCombat() return InCombatLockdown() end
 

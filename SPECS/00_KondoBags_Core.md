@@ -368,7 +368,7 @@ can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we ow
 - [ ] `Scan.Refs(provider) -> { KondoBags_SlotRef... }`: general bags in `Enum.BagIndex` order (= the flat index), typed bags with `ref.kind`; same shape `Mock.Slots()` emits today, so `BagState`/`Layout`/`Window` change nothing
 - [ ] `KondoBags.lua`: `BAG_UPDATE(bag)` marks dirty → `BAG_UPDATE_DELAYED` scans → `BagState:SetSlots`; `ITEM_LOCK_CHANGED` → per-cell redraw
 - [ ] async names: `Item:CreateFromBagAndSlot():ContinueOnItemLoad` fills `name` for search (verify on Era)
-- Milestone: `/kondo` shows the real bags, read-only; `/kondo mock` keeps the mockup
+- Milestone: `/kondo` shows the real bags, read-only (the `/kondo mock` mockup was retired in step 5)
 
 **Step 3 — Secure cells**
 
@@ -389,7 +389,12 @@ can use in play. The keystone is D14: Blizzard owns slot-to-slot gestures, we ow
 
 **Step 5 — Replace the default bags**
 
-- [ ] hook `ToggleBackpack`, `ToggleAllBags`, `OpenAllBags`, `CloseAllBags`, `OpenBackpack`, `CloseBackpack`, `ToggleBag(id)`; stock frames hidden; `Mock/` out of the TOC
+- [ ] **Spec: `SPECS/01_Stock_Bag_Replacement.md`.** Bagnon/BagBrother pattern: `hooksecurefunc` on `ToggleBackpack` / `ToggleBag` /
+      `ToggleAllBags` / `CloseAllBags` (never replace the globals: taint), stock held-bag `ContainerFrameN` re-parented into a hidden sink
+      on `SetID`, Forever `combinedBags` cvar forced off, auto open/close from `PLAYER_INTERACTION_MANAGER_FRAME_SHOW/HIDE`; bag-bar
+      highlight, sounds, Escape; window pre-built at login; bank bags pass through as stock until M7
+- [ ] no setting: installed = stock bags replaced (owner decision 2026-11-18)
+- [ ] `Mock/MockSnapshot.lua` out of the TOC and deleted; `/kondo mock` removed (`Client/Mock.lua` stays for `spec/run.lua`)
 - Milestone: default bags not needed in normal play
 
 Exit criteria (whole phase): right-click use, drag, split-stack, vendor sell and trade all work from the window, in and out of combat; pins survive reload; an external item pins when a slot is free and has nowhere to land when none is.

@@ -29,6 +29,10 @@ read_globals = {
     "WOW_PROJECT_ID", "WOW_PROJECT_MAINLINE", "WOW_PROJECT_CLASSIC", "WOW_PROJECT_CAMELOT",
     "WOW_PROJECT_CATACLYSM_CLASSIC", "WOW_PROJECT_MISTS_CLASSIC",
     "NUM_BAG_SLOTS", "NUM_TOTAL_EQUIPPED_BAG_SLOTS", "NUM_BAG_FRAMES", "KEYRING_CONTAINER",
+    -- stock bag replacement (UI/StockBags.lua)
+    "NUM_CONTAINER_FRAMES", "ContainerFrameContainer", "ContainerFrameCombinedBags", "ToggleBackpack_Combined",
+    "ContainerFrame_AllowedToOpenBags", "IsOptionFrameOpen", "CanOpenPanels", "C_CVar", "debugstack",
+    "TEXTURE_ITEM_QUEST_BANG", "TEXTURE_ITEM_QUEST_BORDER",
     "ITEM_QUALITY_COLORS", "GameFontHighlight", "GameFontNormal", "GameFontHighlightSmall",
     "NumberFontNormal", "ChatFontNormal", "STANDARD_TEXT_FONT",
     "LibStub",

@@ -1,10 +1,8 @@
 -- KondoBags -- bootstrap, saved variables, events, slash commands.
 --
--- Two bag SOURCES share one window: LIVE (Client provider -> Core/Scan -> BagState, rescanned on
--- BAG_UPDATE_DELAYED) and MOCK (Mock/MockSnapshot, for the mockup). Each has its own section store
--- in KondoBagsCharDB so play data is never polluted by the mockup. /kondo = live, /kondo mock = mock.
--- Phase L step 2: live is READ-ONLY (gestures still run on the mock's table swaps; step 4 wires the
--- real cursor), so Drop is disabled on the live bag.
+-- One bag source: LIVE (Client provider -> Core/Scan -> BagState, rescanned on BAG_UPDATE_DELAYED).
+-- The window replaces the stock bags outright (SPECS/01): UI/StockBags.lua hooks the stock entry
+-- points and routes to ns.ToggleBags / ns.OpenBags / ns.CloseBags below.
 
 local ADDON_NAME, ns = ...
 _G.KondoBags = ns
@@ -23,40 +21,15 @@ local function InitDB()
   KondoBagsDB.ammoGlyph = KondoBagsDB.ammoGlyph or "pouch"               -- "pouch" (Blizzard slot art) | "ammo" (projectile icons)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
-  -- Mock store: a fresh one keeps just the mock's hearthstone slot in the default Keep group (D15).
-  local store = KondoBagsCharDB.mockSections
-  if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" or type(store.map) ~= "table" then
-    store = ns.Sections.NewStore()
-    store.kept[ns.Mock.HEARTHSTONE_SLOT] = store.list[1].id
-    store.list[1].order = { ns.Mock.HEARTHSTONE_SLOT }
-    KondoBagsCharDB.mockSections = store
-  end
+  KondoBagsCharDB.mockSections = nil                                      -- M0 mockup store, retired (SPECS/01 R5)
   -- Live store (KondoBagsCharDB.sections, SPECS/00 "Saved variables"): Reconcile validates it against
   -- the real bag on every scan; nil here means a fresh empty Keep at the top on first scan.
 end
 
 -- ---------------------------------------------------------------------------
--- bag sources
+-- the live bag
 -- ---------------------------------------------------------------------------
-local bag            -- the KondoBags_BagState currently attached to the window
-local source         -- "live" | "mock"
-local liveBag, mockBag
-
-local function Attach(b, money)
-  bag = b
-  ns.Window.Attach({ bag = b, money = money, themeID = KondoBagsDB.theme })
-end
-
-local function EnsureMock()
-  if mockBag then return mockBag end
-  mockBag = ns.BagState.New({
-    store = KondoBagsCharDB.mockSections,
-    slots = ns.Mock.Slots(),
-    columns = KondoBagsCharDB.window.columns or 10,
-  })
-  mockBag:AddListener(function(event, b) if event == "changed" then KondoBagsCharDB.window.columns = b.columns end end)
-  return mockBag
-end
+local liveBag        -- the KondoBags_BagState attached to the window
 
 local function LiveScan()
   return (ns.Scan.Refs(ns.Client.Active()))
@@ -127,27 +100,36 @@ local function OnItemLockChanged(bagID, slot)
   -- NO full render here: a lock fires in the middle of Blizzard's own pickup/drop on the secure
   -- button under the mouse; re-dressing / re-parenting it mid-gesture cancels the drag. Only the one
   -- cell's "locked" look changes, in place.
-  if source == "live" and ref then ns.Window.RefreshRef(ref) end
+  if ref then ns.Window.RefreshRef(ref) end
 end
 
--- The bag the UI (Edit Mode, Options) should act on: whichever is attached, else live.
+-- The bag the UI (Edit Mode, Options) acts on. Attaching builds the window (hidden) and renders it.
+local attached = false
 local function EnsureBag()
-  if bag then return bag end
-  source = "live"
-  Attach(EnsureLive(), GetMoney and GetMoney() or 0)
-  return bag
+  local b = EnsureLive()
+  if not attached then
+    attached = true
+    ns.Window.Attach({ bag = b, money = GetMoney and GetMoney() or 0, themeID = KondoBagsDB.theme })
+    ns.EditMode.ApplyToWindow()
+  end
+  return b
 end
 ns.EnsureBag = EnsureBag
 
-local function Open(which)
-  if which ~= source then
-    source = which
-    if which == "mock" then Attach(EnsureMock(), ns.Mock.Money())
-    else Attach(EnsureLive(), GetMoney and GetMoney() or 0) end
-  end
+-- ---------------------------------------------------------------------------
+-- window actions (called by UI/StockBags.lua hooks and /kondo)
+-- ---------------------------------------------------------------------------
+function ns.OpenBags()
+  if ns.Window.IsShown() then return end
+  if not ns.StockBags.AllowedToOpen() then return end
   EnsureBag()
-  ns.EditMode.ApplyToWindow()
-  ns.Window.Toggle()
+  ns.Window.Show()
+end
+function ns.CloseBags()
+  if ns.Window.IsShown() then ns.Window.Hide() end
+end
+function ns.ToggleBags()
+  if ns.Window.IsShown() then ns.CloseBags() else ns.OpenBags() end
 end
 
 -- Event-driven rescan: BAG_UPDATE marks dirty, BAG_UPDATE_DELAYED (coalesced by the client) rescans.
@@ -169,7 +151,7 @@ local function OnBagsChanged()
   KondoBagsCharDB.sections = liveBag.store
   lastLocked = nil
   SyncCursor()
-  if source == "live" then ns.Window.SetMoney(GetMoney and GetMoney() or 0) end
+  ns.Window.SetMoney(GetMoney and GetMoney() or 0)
 end
 
 -- ---------------------------------------------------------------------------
@@ -179,10 +161,8 @@ local function Slash(msg)
   msg = (msg or ""):match("^%s*(.-)%s*$")
   local cmd, rest = msg:match("^(%S*)%s*(.-)$")
   cmd = cmd:lower()
-  if cmd == "" or cmd == "live" then
-    Open("live")
-  elseif cmd == "mock" then
-    Open("mock")
+  if cmd == "" or cmd == "toggle" then
+    ns.ToggleBags()
   elseif cmd == "theme" then
     if rest == "" then
       Print("theme is %s (available: %s)", KondoBagsDB.theme, table.concat(ns.Theme.IDs(), ", "))
@@ -201,12 +181,10 @@ local function Slash(msg)
     Print("bag-type border tint %s", KondoBagsDB.kindTint and "on" or "off")
   elseif cmd == "reset" then
     local wasShown = ns.Window.IsShown()
-    ns.Window.Hide()
-    if source == "mock" then KondoBagsCharDB.mockSections = nil; InitDB(); mockBag = nil
-    else KondoBagsCharDB.sections = nil; liveBag = nil end
-    bag = nil; local was = source; source = nil
-    if wasShown then Open(was or "live") end
-    Print("%s sections reset", was or "live")
+    ns.CloseBags()
+    KondoBagsCharDB.sections = nil; liveBag = nil; attached = false
+    if wasShown then ns.OpenBags() else EnsureBag() end
+    Print("sections reset")
   elseif cmd == "options" or cmd == "config" or cmd == "settings" then
     ns.Options.Open()
   elseif cmd == "status" then
@@ -218,12 +196,12 @@ local function Slash(msg)
     table.sort(free)
     local kept = 0
     for _ in pairs(b.store.kept) do kept = kept + 1 end
-    Print("version %s | source %s | provider %s | %d general + %d typed slots | free %s"
+    Print("version %s | provider %s | %d general + %d typed slots | free %s"
       .. " | %d group(s), %d kept | theme %s | %d cols | edit mode: %s",
-      tostring(version), source or "-", ns.Client.Active().name, summary.general, summary.typed, table.concat(free, " "),
+      tostring(version), ns.Client.Active().name, summary.general, summary.typed, table.concat(free, " "),
       #b.store.list, kept, KondoBagsDB.theme, KondoBagsCharDB.window.columns or 10, ns.EditMode.Status())
   else
-    Print("/kondo - toggle live window | mock | theme [classic|modern] | columns N | tint | reset | options | status")
+    Print("/kondo - toggle bags | theme [classic|modern] | columns N | tint | reset | options | status")
   end
 end
 
@@ -243,14 +221,14 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
     ns.Client.Select()
     ns.EditMode.Setup()
     ns.Options.Setup()
+    ns.StockBags.Setup()
     f:RegisterEvent("BAG_UPDATE")
     f:RegisterEvent("BAG_UPDATE_DELAYED")
     f:RegisterEvent("PLAYER_MONEY")
     f:RegisterEvent("ITEM_LOCK_CHANGED")
     f:RegisterEvent("CURSOR_CHANGED")
-    -- Login state is not "new": clear the client's new-item flags once bag data is available.
     f:RegisterEvent("PLAYER_ENTERING_WORLD")
-    Print("loaded (%s). /kondo to open your bags, /kondo mock for the mockup, /kondo status", ns.Client.Active().name)
+    Print("loaded (%s). Stock bags replaced; /kondo status", ns.Client.Active().name)
   elseif event == "BAG_UPDATE" then
     dirty = true
   elseif event == "BAG_UPDATE_DELAYED" then
@@ -260,9 +238,11 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
   elseif event == "CURSOR_CHANGED" then
     SyncCursor()
   elseif event == "PLAYER_ENTERING_WORLD" then
-    ClearNewItems()
+    -- Pre-build (SPECS/01 R6): secure cells cannot be created in combat, so the window is built and
+    -- rendered hidden now; a first open mid-combat still shows cells. Also clears login "new" flags.
     f:UnregisterEvent("PLAYER_ENTERING_WORLD")
+    if not InCombatLockdown() then EnsureBag() else ClearNewItems() end
   elseif event == "PLAYER_MONEY" then
-    if source == "live" then ns.Window.SetMoney(GetMoney and GetMoney() or 0) end
+    ns.Window.SetMoney(GetMoney and GetMoney() or 0)
   end
 end)

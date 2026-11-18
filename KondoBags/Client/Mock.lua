@@ -1,5 +1,5 @@
--- KondoBags Client/Mock.lua -- provider over a plain table, for spec/run.lua and the in-game mockup.
--- No WoW API. The table shape is what Mock/MockSnapshot.lua already produces: a ref list in bag
+-- KondoBags Client/Mock.lua -- provider over a plain table, for spec/run.lua (off-client tests).
+-- No WoW API. The table shape is Scan.Refs' output: a ref list in bag
 -- order, each { bagID, slot, kind, item = { itemID, name, icon, count, quality } | nil }.
 --
 --   Client.NewMock(refs) -> KondoBags_ClientProvider named "Mock" that reads/writes that table.
@@ -33,6 +33,10 @@ function Client.NewMock(refs)
     local it = ref and ref.item
     if not it then return nil end
     return { itemID = it.itemID, link = nil, icon = it.icon, count = it.count or 1, quality = it.quality or 1, locked = false, name = it.name }
+  end
+  function P.QuestInfo(bag, slot)
+    local ref = byBag[bag] and byBag[bag].slots[slot]
+    return ref and ref.item and ref.item.quest or nil
   end
   function P.Pickup(bag, slot)
     local ref = byBag[bag] and byBag[bag].slots[slot]

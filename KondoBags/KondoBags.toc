@@ -34,7 +34,6 @@ UI\Themes\Modern.lua
 UI\Window.lua
 UI\EditMode.lua
 UI\Options.lua
-
-Mock\MockSnapshot.lua
+UI\StockBags.lua
 
 KondoBags.lua

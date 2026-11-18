@@ -23,6 +23,11 @@ local _, ns = ...
 local Theme = {}
 ns.Theme = Theme
 
+-- Quest item highlight pulse (SPECS/01): one full cycle 1 -> min -> 1 in QUEST_PULSE_PERIOD_SEC.
+-- A theme may override with questPulsePeriodSec / questPulseMinAlpha.
+Theme.QUEST_PULSE_PERIOD_SEC = 2.4
+Theme.QUEST_PULSE_MIN_ALPHA = 0.45
+
 local registry = {}   -- KondoBags_ThemeID -> KondoBags_Theme
 
 -- Border tint per KondoBags_SlotKind for restricted-bag cells: { r, g, b, a }. Shared default so both

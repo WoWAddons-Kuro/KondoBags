@@ -3,7 +3,7 @@
 --
 --   Scan.Refs(provider) -> { KondoBags_SlotRef... }, KondoBags_ScanSummary
 --     KondoBags_SlotRef     = { bagID, slot, kind, item = KondoBags_ItemView | nil }
---     KondoBags_ItemView    = { itemID, link, name, icon, count, quality, locked }
+--     KondoBags_ItemView    = { itemID, link, name, icon, count, quality, locked, quest = KondoBags_QuestFlags | nil }
 --     KondoBags_ScanSummary = { general = n, typed = n, free = { [kind] = n } }
 --
 -- Order: GENERAL bags first in provider BagIDs() order, slot 1..N each -- that sequence IS the
@@ -16,11 +16,12 @@ ns = ns or {}
 local Scan = {}
 ns.Scan = Scan
 
-local function ItemView(raw)
+local function ItemView(raw, quest)
   if not raw then return nil end
   return {
     itemID = raw.itemID, link = raw.link, name = raw.name, icon = raw.icon,
     count = raw.count or 1, quality = raw.quality or 1, locked = raw.locked or false,
+    quest = quest,
   }
 end
 
@@ -32,7 +33,9 @@ function Scan.Refs(provider)
     local into = (kind == "general") and general or typed
     local n = provider.NumSlots(bag)
     for slot = 1, n do
-      local ref = { bagID = bag, slot = slot, kind = kind, item = ItemView(provider.SlotInfo(bag, slot)) }
+      local raw = provider.SlotInfo(bag, slot)
+      local quest = (raw and provider.QuestInfo) and provider.QuestInfo(bag, slot) or nil
+      local ref = { bagID = bag, slot = slot, kind = kind, item = ItemView(raw, quest) }
       into[#into + 1] = ref
       if not ref.item then summary.free[kind] = (summary.free[kind] or 0) + 1 end
     end
