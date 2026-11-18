@@ -1,8 +1,8 @@
 # SPEC 00 — KondoBags core: sectioned bag addon
 
-- **Status:** Draft 3 (2026-11-17) — revised from the original BagAddon draft with the decisions in "Decisions log".
+- **Status:** Living spec (2026-11-18). Describes the addon as it is and as it will be; decisions in "Decisions log". History is not kept here — see git.
 - **Name:** `KondoBags` (after Marie Kondo). Collision check done: none. Folder, TOC, SavedVariables and slash all use it.
-- **Not related to `GotJunk/`.** That is an earlier, separate addon in this workspace. KondoBags shares no code, data or dependency with it. Any junk-deletion widget is **out of scope** until the window is done (owner, 2026-11-17).
+- **Not related to `GotJunk/`.** KondoBags shares no code, data or dependency with it. Any junk-deletion widget is **out of scope** until the window is done.
 - **Targets:** all current clients, with **Classic Era / Hardcore (interface 11509)** and **WoW: Forever (interface 16001)** as the clients we test on first. Cata/Mists/Retail get TOC lines and a clean provider seam, untested until later.
 - **Repo shape:** packager-style, addon one level down (`KondoBags/KondoBags/KondoBags.toc`), like `DragonToast_upstream`. `cmd\publish.cmd` discovers it via rule 2 (`D\X\X.toc`).
 
@@ -10,7 +10,7 @@ Milestones:
 
 - [ ] **M0 — UI mockup**: static in-game window from a fake snapshot, Edit Mode movable/scalable. No bag API, no data model. *Nothing in M1+ starts until the look is agreed.*
 - [ ] M1 — Dev loop, bag model and classifier core (tested off-client with `lua5.1`)
-- [ ] M2 — *(reserved; was a junk widget, deferred)*
+- [ ] M2 — *(reserved)*
 - [ ] M3 — Current-quest section (marked quest items plus items a logged quest requires)
 - [ ] M4 — Bag window live: five sections, secure buttons, restricted-slot strips, search, pins
 - [ ] M5 — Two themes: flat and classic
@@ -37,11 +37,11 @@ The design goal is the smallest possible configuration surface and the least ado
 | D6 | All flavours supported in TOC and seam; Era + Forever tested first | Owner priority. |
 | D7 | Tests run with `lua5.1` (installed: `C:\ProgramData\chocolatey\bin\lua5.1.exe`, `luacheck` also present) | Confirmed on this machine 2026-11-17. |
 | D8 | Libraries are **vendored** (unmodified, with `VENDORED.txt`), not git submodules | `publish.cmd` treats an empty submodule folder as missing and LibEditMode has no CurseForge zip to fall back on. |
-| D9 | **MVC split in code**: `Core/Sections.lua` (model), `Core/Layout.lua` (pure layout), `Core/BagState.lua` (controller: owns store + slots + held item, `Pickup/Drop` decide pin-vs-swap, emits `changed`/`cursor`), `UI/Window.lua` (view only: draws `BagState:Layout()`, forwards gestures). | Audit 2026-11-17 found the view mutating the model. Drop semantics are now unit-tested and survive the M4 switch to secure buttons untouched; the mock item source is swapped for the Client provider inside the controller. |
-| D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner, 2026-11-17, after seeing headers, `+` cell and handle cell in game: too gaudy. |
-| D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. Replaces Draft 3's logical per-itemID pins. |
-| D12 | **One physical Keep range, many visual groups.** Physically there are exactly two ranges: incoming (`0 .. boundary-1`) and Keep (`boundary .. N-1`), with ONE boundary and the D11 grow/shrink rule. The UI "sections" below incoming are **groups**: named lists of Keep slots (`{ id, name, order }`) that together partition the Keep range. A `+` button (right of the search box) adds a new empty group drawn below the last. Dropping on group G's lock pins via D11 and records the new slot in `G.order`. When a shrink slides the lowest-slot item into a hole, the slot is renamed in whichever group's `order` held it, so visual membership follows the item. Incoming is always drawn first. | Owner, 2026-11-18, correcting the assistant's reading of "multiple sections" as multiple physical ranges. Keeps the loot invariant trivially (one boundary) and makes `+` a pure UI feature. |
-| D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; pinning SHIFTS incoming down (the one unavoidable incoming reshuffle); restricted bag types are extra incoming runs, no Keep for them; bag swaps move nothing because Keep positions are an indirection map. | Owner, 2026-11-18. Articulated after the D11/D12 iterations surfaced each edge case in play. |
+| D9 | **MVC split in code**: `Core/Sections.lua` (model), `Core/Layout.lua` (pure layout), `Core/BagState.lua` (controller: owns store + slots + held item, `Pickup/Drop` decide pin-vs-swap, emits `changed`/`cursor`), `UI/Window.lua` (view only: draws `BagState:Layout()`, forwards gestures). | The view must never mutate the model. Drop semantics are now unit-tested and survive the M4 switch to secure buttons untouched; the mock item source is swapped for the Client provider inside the controller. |
+| D10 | **Section UI = drop cells, not headers/handles/dividers.** A section is one run of cells: a single drop cell (faded lock glyph) immediately left of its first item, then its items. The unsectioned remainder ("incoming") is drawn above, exactly like the stock bag. A new character starts with one section, **Keep**, holding Hearthstone. More sections can be made later (UI not in M0). | Owner. Headers, dividers and handles read as gaudy next to the stock bag. |
+| D11 | **Sections are physical slot ranges**, bottom-up from the highest slots; incoming = the low slots in Blizzard's loot order, drawn slot 0 bottom-right. Pin/unpin = physical move(s); on shrink the section returns its **lowest** slot. See "Sections are PHYSICAL slot ranges". | Owner, 2026-11-18. Incoming cells must never shift when cells are added/removed at its start; and the mock must behave exactly as M4's real `PickupContainerItem` moves will. |
+| D12 | **One physical Keep range, many visual groups.** Physically there are exactly two ranges: incoming (`0 .. boundary-1`) and Keep (`boundary .. N-1`), with ONE boundary and the D11 grow/shrink rule. The UI "sections" below incoming are **groups**: named lists of Keep slots (`{ id, name, order }`) that together partition the Keep range. A `+` button (right of the search box) adds a new empty group drawn below the last. Dropping on group G's lock pins via D11 and records the new slot in `G.order`. When a shrink slides the lowest-slot item into a hole, the slot is renamed in whichever group's `order` held it, so visual membership follows the item. Incoming is always drawn first. | Owner, 2026-11-18. Keeps the loot invariant trivially (one boundary) and makes `+` a pure UI feature. |
+| D13 | **Slot-model invariants, stated once** (see "Invariants" under Bag window): Keep never has a free slot; pinning SHIFTS incoming down (the one unavoidable incoming reshuffle); restricted bag types are extra incoming runs, no Keep for them; bag swaps move nothing because Keep positions are an indirection map. | Owner, 2026-11-18. |
 
 ## Architecture
 
@@ -225,13 +225,13 @@ KondoBagsDB = {                           -- ## SavedVariables (account): displa
 
 Stackables and consumables pin by item ID. Gear pins by an instance key (M6), because two drops with the same item ID can differ by random suffix or enchant.
 
-*(A junk-deletion widget was specified here in Draft 2 and removed in Draft 3; out of scope until the window is done.)*
+*(Junk deletion is out of scope until the window is done.)*
 
 ### Bag window
 
 One window replaces the default bag frames. It hooks the standard open/close/toggle entry points and the bag keybinds.
 
-**Starting point: the stock Combined Backpack, unchanged.** Same frame art, title bar, portrait, close button, search box, sort button, slot grid, money bar. The only thing classic bags lack is differentiation: the grid is one undifferentiated run of boxes. KondoBags adds *sections* on top of that grid and nothing else. **No labelled header rows** (five empty "Quest / Keep / Junk…" headers on a fresh character looked dumb and stopped looking like the stock bag; rejected 2026-11-17).
+**Starting point: the stock Combined Backpack, unchanged.** Same frame art, title bar, portrait, close button, search box, sort button, slot grid, money bar. The only thing classic bags lack is differentiation: the grid is one undifferentiated run of boxes. KondoBags adds *sections* on top of that grid and nothing else. **No labelled header rows, dividers or handles**: they stop it looking like the stock bag.
 
 **Grid.** Column count comes from the window width; the window is **drag-resizable in Edit Mode, snapping to whole cells** (`KondoBagsCharDB.window.columns`; rows follow from content). Every run of cells is **bottom-anchored like the stock bags**: its last row is full and any partial row is the top row, right-aligned, so free space appears top-left. Empty slots stay as empty slot art (a faded bag icon), exactly like stock. Restricted bags (quiver, soul, reagent) keep their stock windows in this iteration.
 
@@ -285,7 +285,7 @@ Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`
 |---|---|---|
 | Drop kept `k` (slot `s_k`) on **occupied** incoming slot `t` | swap `s_k ↔ t` | `k` now loose at `t`'s cell; old `t` is kept, takes `k`'s place in `order`. Boundary unchanged |
 | Drop kept `k` on **empty** incoming slot `t` | move `k → t`; if `s_k ≠ boundary` then swap `boundary ↔ s_k`; `boundary += 1` | `k` appears at `t`; the section is one shorter; incoming gains slot `boundary-1` at its top-left; nothing else in incoming moves. Example: `5 4 3 2 1 0 \| 6 7 8`, drag 7 → empty 2 ⇒ `6 5 4 3 2 1 0 \| 7 8` |
-| Drop loose `l` (slot `s_l`) on a section's **lock cell** | **shift**: for `s = s_l .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order with the gap at `s_l` closed (D13.2). Zero moves if `s_l == boundary-1`. *(Supersedes the earlier single-swap rule, which dropped the displaced item mid-incoming.)* |
+| Drop loose `l` (slot `s_l`) on a section's **lock cell** | **shift**: for `s = s_l .. boundary-2` swap `s ↔ s+1` (each carries `l` one up and the displaced item one down); `boundary -= 1`; `order` gains `l` at the front | `l` appears right of the lock. Incoming stays in loot order with the gap at `s_l` closed (D13.2). Zero moves if `s_l == boundary-1`. |
 | Drop kept `k` on kept `j` (same section) | none (or one swap; slot order is free) | reorder: `k` takes `j`'s position in `order` |
 | **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
 | Loose on loose / empty | stock swap/place | stock |
@@ -306,51 +306,11 @@ KondoBagsCharDB.sections = {                 -- KondoBags_SectionStore; list ord
 
 Consequences: (a) a drop **may need a free slot only when the gesture is itself a physical place into an empty slot**, exactly like stock; pinning never does, it swaps; (b) `BagState:Drop` returns the list of moves, which the mock applies to the slot table and M4 applies through the Client provider; (c) `Partition` is now trivial — slots below `boundary` descending are incoming, slots at/above are the section in `order`.
 
-**Superseded (Draft 3, 2026-11-17):** logical per-`itemID` pins that never moved items. Rejected because an unpinned item then sat wherever Blizzard had put it, so reclaiming its cell reshuffled incoming; and because the mock's "logical" behaviour would not have matched what M4's real moves produce.
-
-**Rejected along the way (2026-11-17, kept for the record):** labelled header rows with thin rules; a `+` cell that creates a section; a per-section handle cell (`≡`) for drag-reorder / right-click; divider lines between sections. All read as gaudy next to the stock bag.
-
-- Sections are *logical*. `OnReceiveDrag` on a lock cell records a pin in `KondoBagsCharDB.sections` and returns the cursor item to its slot. **A drop never needs a free slot.**
-- The classifier's automatic sections (Quest, Junk, …) come later and render as more runs with the same lock cell, so the mockup proves the user-made section first.
-
-```lua
--- pseudocode: illustrative only
-KondoBagsCharDB.sections = {                  -- KondoBags_SectionStore; list order is display order
-  nextID = 2,
-  list = { { id = "s1", name = "Keep", items = { [6948] = true } } },
-}
-KondoBags_SectionID = string                  -- stable key, e.g. "s1", never reused
-```
-
-**M0 mockup scope:** stock-looking window from a fake snapshot; default Keep section with lock cell; mock pick-up (carry icon follows the mouse) and drop-to-pin; Edit Mode move + cell-snapped resize. Creating further sections is not in M0.
-
-**Previous layout (rejected 2026-11-17, kept for the record):**
-
-```
-+------------------------------------------------+
-| KondoBags                          [ search ]  |
-| Quest ─────────────────────────────────────── |
-|  [][][]                                        |
-| Upcoming ──────────────────────────────────── |
-|  [][]                                          |
-| Keep ──────────────────────────────────────── |
-|  [][][][][]                                    |
-| Everything else ───────────────────────────── |
-|  [][][][][][][][][][]                          |
-|  [][][][][][][]                    [free: 5]   |
-| Junk ──────────────────────────────────────── |
-|  [][][]            (cells dimmed)              |
-| ── restricted ────────────────────────────── |
-|  Reagent  [][][][]                 [free: 12]  |
-|  Quiver   [][]                     [free: 14]  |
-+------------------------------------------------+
-```
-
-Rejected because labelled header rows look dumb when most sections are empty, and because it stopped looking like the stock bag.
+**M0 mockup scope:** stock-looking window from a fake snapshot; default Keep group with lock cell; mock pick-up (carry icon follows the mouse) and drop-to-pin; `+` adds a group, right-click a lock removes it; Edit Mode move + cell-snapped resize.
 
 **Secure item buttons.** Right-click-to-use must work in combat, so every item cell is the client's own container item button template (`ContainerFrameItemButtonTemplate`), with the bag ID on its parent frame (`SetID(bag)`) and the slot ID on the button (`SetID(slot)`). These cannot be created or re-parented during combat. The window keeps a pool sized to total slot count, built out of combat, and any layout change requested in combat is deferred to `PLAYER_REGEN_ENABLED`. Content updates that do not re-parent (icon, count, dimming) may still run in combat.
 
-**Pinning by direct manipulation.** The `+` cell and section handles are the only pin gestures in M0. Later: drop onto the unsectioned area to unpin; modifier-click shortcut.
+**Pinning by direct manipulation.** Drop on a group's lock cell (or on the Shift-drag cursor gap) pins; drop on an incoming cell unpins. Later: modifier-click shortcut.
 
 **Search.** A small edit box in the upper right. On each text change, every visible item whose name does not contain the query (case-insensitive, plain substring) is desaturated and dimmed; matches stay normal. Empty box restores everything. Escape clears and unfocuses. Appearance-only, so safe in combat.
 
@@ -358,7 +318,7 @@ Rejected because labelled header rows look dumb when most sections are empty, an
 
 ### Themes
 
-A theme is a data table (textures, borders, background, fonts, cell art, handle/`+` glyphs, divider, metrics) consumed by one renderer. No theme-specific code paths. **`classic` is the default**: the window must look like the stock Combined Backpack of the client it runs on. A **modern** theme is the second option and must exist from M0 so the renderer is proven theme-agnostic.
+A theme is a data table (textures, borders, background, fonts, cell art, lock/gap glyphs, section gap, metrics) consumed by one renderer. No theme-specific code paths. **`classic` is the default**: the window must look like the stock Combined Backpack of the client it runs on. A **modern** theme is the second option and must exist from M0 so the renderer is proven theme-agnostic.
 
 | Theme (`KondoBags_ThemeID`) | Intent |
 |---|---|
@@ -415,7 +375,7 @@ Each phase ends with something usable in play, and nothing is built before the l
 - [x] `UI/EditMode.lua`: placeholder registered with LibEditMode; drag + cell-snapped resize grip. In-game verification pending
 - [x] `/kondo` toggles the mock window; `/kondo status`, `theme`, `columns`, `reset`
 - [ ] Visual sign-off on classic theme: lock drop cell look pending; portrait/search/bg/money/footer accepted 2026-11-17
-- [x] Spec hygiene: Toss-line remnants purged (Draft 3)
+- [x] Spec hygiene: no history, only current design
 
 Exit criteria: owner looks at it on both clients and signs off on frame art, spacing, cell art, lock cell. Screenshots saved to `docs/`.
 
@@ -491,12 +451,3 @@ As in the sections above; each gets its own `SPECS/0N_*.md` when work starts.
 - **Stock art for `classic`** — which textures/atlases exist on each client now that Era runs the newer UI framework.
 - **Edit Mode and a toggled window** — whether to register the live window itself (hidden frames cannot be dragged) or a placeholder that the window follows, as MoveMyBags.Kuro does. Decide during M0.
 - **Pin on drop vs. the client's own drag.** `OnReceiveDrag` on a plain frame fires when the mouse is released over it with an item on the cursor; confirm it also fires on Era for frames that are not item buttons, else fall back to `OnMouseUp` + `CursorHasItem()`.
-
-## Alternatives considered
-
-- **User-authored rules with inference from drags.** More general, possible later layer; five fixed sections cover the stated need with no rule concept in the UI.
-- **Items appearing in more than one section.** Rejected: first-match precedence is the entire model and every item has one explainable reason for where it sits.
-- **Dropping onto an empty slot to move an item into a section.** Rejected: there may be no empty slot, and sections are not places. A drop on a section is a pin, so it needs no free space and never moves anything.
-- **Physically sorting items between bags.** Rejected: slow, visible, blocked in several situations. Logical views avoid all of that.
-- **Account-wide pins.** Rejected (D2): the addon models one character's habits.
-- **Own window-scale setting.** Rejected (D3): Edit Mode owns position and scale for every other frame on screen; ours should behave the same.
