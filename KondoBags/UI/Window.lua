@@ -426,7 +426,15 @@ local function DressCell(b, cell, theme)
     SetItemButtonCount(b, item and item.count or 0)
     SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
     SetItemButtonDesaturated(b, item and item.locked or false)
-    ApplyNormalTint()                                -- after SetItemButtonQuality, which whitens NormalTexture
+    ApplyNormalTint()
+    -- Occupied typed cell: the item icon covers the Quickslot ring, so the kind tint has to sit on the
+    -- OVERLAY IconBorder (the quality frame). Quality colour wins when the item has one (uncommon+).
+    if item and normalTint and b.qborder then
+      if not (item.quality and item.quality >= 2) then
+        b.qborder:SetTexture("Interface\\Common\\WhiteIconFrame")
+        b.qborder:SetVertexColor(unpack(normalTint)); b.qborder:Show()
+      end
+    end
     -- The template owns a "new item" glow (NewItemTexture + newitemglowAnim/flashAnim) that only
     -- stock's UpdateItems drives; left alone it can show on every cell. We draw it ourselves:
     -- glow only when the client flags the slot new (looted this session), exactly like stock.

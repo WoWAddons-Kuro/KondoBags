@@ -96,8 +96,16 @@ local function HookToggles()
     if not s:find("OpenBackpack") and not s:find("ToggleBackpack") and not s:find("Manager") then ns.ToggleBags() end
   end)
   -- Escape: CloseAllWindows -> CloseAllBags() with no frame. Frame-scoped calls are panel bookkeeping
-  -- (merchant/mail closing "their" bags) and are covered by the interaction events below.
-  hooksecurefunc("CloseAllBags", function(frame) if frame == nil then ns.CloseBags() end end)
+  -- (merchant/mail closing "their" bags) and are covered by the interaction events below. Stock's own
+  -- toggles also call CloseAllBags internally (ToggleBackpack_Individual when the invisible stock
+  -- backpack is "open"); those are already handled by the toggle hooks above, so skip them here or the
+  -- window closes and is toggled straight back open (the "first B after /reload does nothing" bug).
+  hooksecurefunc("CloseAllBags", function(frame)
+    if frame ~= nil then return end
+    local s = debugstack()
+    if s:find("ToggleBackpack") or s:find("ToggleBag") or s:find("ToggleAllBags") or s:find("Manager") then return end
+    ns.CloseBags()
+  end)
 end
 
 -- ---------------------------------------------------------------------------
