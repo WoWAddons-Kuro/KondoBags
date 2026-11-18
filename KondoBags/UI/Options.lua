@@ -75,6 +75,30 @@ local function CreateOptions()
     return box
   end
 
+  -- Section: Edit Mode (informational + reset)
+  local em = Section("Window")
+  -- Lock position lives in KondoBagsCharDB.window.locked (per character; the same flag the Edit Mode
+  -- dialog's checkbox edits), so it needs its own binding instead of Check()'s KondoBagsDB one.
+  local lock = CreateFrame("CheckButton", nil, em, "InterfaceOptionsCheckButtonTemplate")
+  lock.Text:SetText("Lock position (move the window only in Edit Mode)")
+  lock.tooltipText = "Untick to drag the bag window by its frame at any time. Also available in the Edit Mode dialog for KondoBags."
+  lock:SetScript("OnClick", function(self)
+    KondoBagsCharDB.window = KondoBagsCharDB.window or {}
+    KondoBagsCharDB.window.locked = self:GetChecked() and true or false
+  end)
+  lock.Update = function(self) self:SetChecked(KondoBagsCharDB.window ~= nil and KondoBagsCharDB.window.locked == true) end
+  em:Add(lock, 26)
+  local note = em:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+  note:SetWidth(BOX_W - 2 * PAD); note:SetJustifyH("LEFT")
+  note:SetText("Position, scale and column count live in Edit Mode (Game Menu > Edit Mode): drag the KondoBags frame, or drag its corner grip to change the number of columns.")
+  em:Add(note, 30, -6, 4)
+  local reset = CreateFrame("Button", nil, em, "UIPanelButtonTemplate")
+  reset:SetSize(160, 22); reset:SetText("Reset to 10 columns")
+  reset:SetScript("OnClick", function() if ns.EnsureBag then ns.EnsureBag():SetColumns(10) end end)
+  em:Add(reset, 22, -8, 4)
+  em:Finish()
+
+
   -- Section: Theme (radio group over KondoBagsDB.theme)
   local th = Section("Theme")
   local themeRadios = {}
@@ -102,19 +126,8 @@ local function CreateOptions()
     "Special bags are drawn as one row above your normal items. The tint says which kind each slot is: orange ammo, green herb, purple soul, blue enchanting, bronze mining, gold keyring, teal reagent.",
     function() ns.Window.Render() end), 26)
   bt:Finish()
+  local lastSection = bt
 
-  -- Section: Edit Mode (informational + reset)
-  local em = Section("Window")
-  local note = em:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  note:SetWidth(BOX_W - 2 * PAD); note:SetJustifyH("LEFT")
-  note:SetText("Position, scale and column count live in Edit Mode (Game Menu > Edit Mode): drag the KondoBags frame, or drag its corner grip to change the number of columns.")
-  em:Add(note, 30, -6, 4)
-  local reset = CreateFrame("Button", nil, em, "UIPanelButtonTemplate")
-  reset:SetSize(160, 22); reset:SetText("Reset to 10 columns")
-  reset:SetScript("OnClick", function() if ns.EnsureBag then ns.EnsureBag():SetColumns(10) end end)
-  em:Add(reset, 22, -8, 4)
-  em:Finish()
-  local lastSection = em
 
   local function LayoutContentHeight()
     local top, bottom = content:GetTop(), lastSection:GetBottom()

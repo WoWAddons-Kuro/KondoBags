@@ -80,20 +80,34 @@ local function CreateWindow(theme)
     end
     if frame.Bg and theme.bgTint then frame.Bg:SetVertexColor(unpack(theme.bgTint)) end
     frame.Title = frame.TitleContainer and frame.TitleContainer.TitleText or frame.TitleText
-    if frame.SetTitle then frame:SetTitle("KondoBags") elseif frame.Title then frame.Title:SetText("KondoBags") end
+    if frame.SetTitle then frame:SetTitle("Kondo Backpack") elseif frame.Title then frame.Title:SetText("Kondo Backpack") end
     frame.Close = frame.CloseButton
     if frame.Close then frame.Close:SetScript("OnClick", function() Window.Hide() end) end
   else
+    -- Flat frame: title bar metrics come from theme.titleBar = { height, titleY, closeSize, closeInset,
+    -- closeColor, closeHoverColor }. The close button is a flat glyph, not the stock round button.
+    local tb = theme.titleBar or {}
     frame.Portrait = frame:CreateTexture(nil, "ARTWORK")
-    frame.Portrait:SetSize(40, 40)
+    frame.Portrait:SetSize(tb.portraitSize or 40, tb.portraitSize or 40)
     frame.Portrait:SetPoint("TOPLEFT", 4, -4)
     frame.Portrait:SetTexture("Interface\\Icons\\INV_Misc_Bag_08")
     if frame.Portrait.SetMask then frame.Portrait:SetMask("Interface\\CHARACTERFRAME\\TempPortraitAlphaMask") end
     frame.Title = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    frame.Title:SetPoint("TOP", 0, -14)
-    frame.Title:SetText("KondoBags")
-    frame.Close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-    frame.Close:SetPoint("TOPRIGHT", 2, 2)
+    frame.Title:SetPoint("TOP", 0, -(tb.titleY or 14))
+    frame.Title:SetText("Kondo Backpack")
+    local cs = tb.closeSize or 16
+    frame.Close = CreateFrame("Button", nil, frame)
+    frame.Close:SetSize(cs, cs)
+    frame.Close:SetPoint("TOPRIGHT", -(tb.closeInset or 6), -(tb.closeInset or 6))
+    frame.Close:SetFrameLevel(frame:GetFrameLevel() + 10)
+    frame.Close.glyph = frame.Close:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    frame.Close.glyph:SetPoint("CENTER", 0, 0)
+    frame.Close.glyph:SetText("x")
+    local cc = tb.closeColor or { 0.7, 0.7, 0.7 }
+    local hc = tb.closeHoverColor or { 1, 0.3, 0.3 }
+    frame.Close.glyph:SetTextColor(unpack(cc))
+    frame.Close:SetScript("OnEnter", function(self) self.glyph:SetTextColor(unpack(hc)) end)
+    frame.Close:SetScript("OnLeave", function(self) self.glyph:SetTextColor(unpack(cc)) end)
     frame.Close:SetScript("OnClick", function() Window.Hide() end)
   end
 
@@ -106,6 +120,23 @@ local function CreateWindow(theme)
     Window.ApplySearch(self:GetText())
   end)
   frame.Search:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
+  -- Flat search (theme.searchFlat = { r, g, b, a }): hide SearchBoxTemplate's textured border and
+  -- lay a plain colour behind the text. The box reads as a slightly lighter rectangle, no outline.
+  if theme.searchFlat then
+    for _, key in ipairs({ "Left", "Right", "Middle", "LeftTex", "RightTex", "MiddleTex" }) do
+      local tex = frame.Search[key]
+      if tex and tex.SetAlpha then tex:SetAlpha(0) end
+    end
+    for _, region in ipairs({ frame.Search:GetRegions() }) do
+      if region:IsObjectType("Texture") and region ~= frame.Search.searchIcon then
+        local file = region.GetTextureFileID and region:GetTextureFileID()
+        if file and file ~= 0 then region:SetAlpha(0) end
+      end
+    end
+    frame.Search.flatBg = frame.Search:CreateTexture(nil, "BACKGROUND", nil, -8)
+    frame.Search.flatBg:SetAllPoints()
+    frame.Search.flatBg:SetColorTexture(unpack(theme.searchFlat))
+  end
 
   -- "+" right of the search box: adds a new empty keep group below the last (D12).
   frame.AddGroup = CreateFrame("Button", "KondoBagsAddGroupButton", frame)
@@ -141,9 +172,14 @@ local function CreateWindow(theme)
   for _, b in ipairs(cells) do b:SetParent(frame.Grid) end
   if old then old:Hide(); old:SetParent(nil) end
 
-  -- Plain drag to move (outside Edit Mode); Edit Mode owns position when the lib is present.
+  -- Plain drag to move outside Edit Mode, only when "Lock position" (Edit Mode dialog) is off.
+  -- Inside Edit Mode the placeholder owns the position.
   frame:RegisterForDrag("LeftButton")
-  frame:SetScript("OnDragStart", function(self) if not ns.EditMode or not ns.EditMode.IsActive() then self:StartMoving() end end)
+  frame:SetScript("OnDragStart", function(self)
+    local em = ns.EditMode
+    if em and (em.IsActive() or em.IsPositionLocked()) then return end
+    self:StartMoving()
+  end)
   frame:SetScript("OnDragStop", function(self) self:StopMovingOrSizing(); if ns.EditMode then ns.EditMode.OnWindowMoved() end end)
   return frame
 end

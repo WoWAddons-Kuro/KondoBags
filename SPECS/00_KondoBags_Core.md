@@ -178,7 +178,7 @@ If a client does not fire `BAG_UPDATE_DELAYED`, the fallback is a single one-sho
 KondoBagsCharDB = {                       -- ## SavedVariablesPerCharacter
   version  = 1,
   sections = KondoBags_SectionStore,      -- D12: { nextID, boundary, list = { KondoBags_Group... } }; see "Bag window"
-  window   = { point, x, y, columns },    -- KondoBags_WindowPlacement
+  window   = { point, x, y, columns },    -- KondoBags_WindowPlacement (+ locked = bool)
   swapOut  = { [gearKey] = true },        -- transient fishing swap-outs (M6)
 }
 KondoBagsDB = {                           -- ## SavedVariables (account): display-only, nothing about sorting
@@ -305,7 +305,8 @@ The intended complete list:
 |---|---|---|---|
 | Theme | classic / modern | classic | Settings panel |
 | Bag-type border tint | on / off | on | Settings panel (`/kondo tint` for now) |
-| Window position, scale and column count | — | — | **Edit Mode** (not a setting of ours) |
+| Lock position | locked / movable | movable | Settings panel **and** the Edit Mode dialog for the window (`KondoBagsCharDB.window.locked`). Movable = the window drags by its frame at any time, as most addons do; locked = only in Edit Mode. |
+| Window position, scale and column count | — | — | **Edit Mode**: drag the frame; drag its corner grip to set columns (width snaps to whole cells, height follows). Not a setting of ours. |
 
 Pins are managed in the window itself. Anything proposed beyond this list needs a reason it cannot be a fixed behaviour.
 

@@ -7,7 +7,14 @@ ns.Theme.Register({
   cell = { size = 36, pitchX = 40, pitchY = 40, iconInset = 2 },
   sectionGapRows = 3,    -- gap between runs (incoming/groups) = 3x the normal inter-row gap
   frame = { padLeft = 10, padRight = 10, padTop = 8, padBottom = 8 },
-  titleHeight = 44,
+  titleHeight = 40,
+  -- Flat title bar: title text higher, small flat "x" close glyph instead of the stock round button.
+  titleBar = { titleY = 6, closeSize = 18, closeInset = 6, portraitSize = 28,
+               closeColor = { 0.65, 0.65, 0.65 }, closeHoverColor = { 1, 0.35, 0.35 } },
+  searchHeight = 20,
+  searchTopGap = 16,     -- below the title line
+  searchWidthScale = 0.6,-- modern panel is denser; a 60%-width search box reads better than full
+  searchFlat = { 1, 1, 1, 0.07 },   -- no textured border: a slightly lighter flat rectangle
   footerHeight = 20,
   backdrop = {
     bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -21,7 +28,7 @@ ns.Theme.Register({
   titleFont = "GameFontNormal",
   slotNormal = nil,
   slotFlat = { 0, 0, 0, 0.25 },          -- near-transparent interior; the border carries the cell
-  slotBorder = { 0.55, 0.55, 0.55, 0.9 }, -- 1px ring, brighter than the panel
+  slotBorder = { 0.32, 0.32, 0.32, 0.9 }, -- 1px ring, a step above the panel; not bright
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
   kindGlyph = {

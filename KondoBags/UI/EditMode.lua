@@ -29,6 +29,10 @@ end
 
 function EditMode.IsActive() return editing end
 
+-- True when the window may be dragged by its frame OUTSIDE Edit Mode (the "Lock position"
+-- checkbox in the Edit Mode dialog is off). Default movable.
+function EditMode.IsPositionLocked() return Placement().locked == true end
+
 -- Apply saved placement to the live window.
 function EditMode.ApplyToWindow()
   local f = Window.Frame()
@@ -49,7 +53,8 @@ end
 
 -- Window re-rendered at a new size: keep the placeholder the same size.
 function EditMode.OnWindowResized(w, h)
-  if placeholder then placeholder:SetSize(w, h) end
+  -- Not while Blizzard is sizing it: a SetSize mid-drag fights StartSizing and collapses the frame.
+  if placeholder and not placeholder.resizing then placeholder:SetSize(w, h) end
 end
 
 local function SnapColumnsFromWidth(width)
@@ -73,7 +78,9 @@ end
 local function CreatePlaceholder()
   if placeholder then return placeholder end
   placeholder = CreateFrame("Frame", "KondoBagsEditModePlaceholder", UIParent)
-  placeholder:SetFrameStrata("MEDIUM")
+  -- Above the live window (MEDIUM, toplevel): clicking the window raises it, and a MEDIUM placeholder
+  -- would then drag underneath it.
+  placeholder:SetFrameStrata("HIGH")
   placeholder:SetClampedToScreen(true)
   placeholder:SetMovable(true)
   placeholder:SetResizable(true)
@@ -86,7 +93,9 @@ local function CreatePlaceholder()
   label:SetPoint("CENTER"); label:SetText("KondoBags")
   placeholder.label = label
 
-  -- resize grip, bottom-right; snaps to whole columns on release and live while dragging
+  -- Resize grip, bottom-right. Blizzard sizes the placeholder (StartSizing); we only READ its width,
+  -- snap it to a column count and resize the live window to match. The window's height is ours.
+  -- The placeholder is never resized by us while the drag is in progress, so nothing fights.
   local grip = CreateFrame("Button", nil, placeholder)
   grip:SetSize(16, 16)
   grip:SetPoint("BOTTOMRIGHT", -2, 2)
@@ -96,21 +105,68 @@ local function CreatePlaceholder()
   grip:SetScript("OnMouseDown", function()
     placeholder.resizing = true
     placeholder:StartSizing("BOTTOMRIGHT")
+    if placeholder.FollowStart then placeholder.FollowStart() end
   end)
   grip:SetScript("OnMouseUp", function()
     placeholder.resizing = false
     placeholder:StopMovingOrSizing()
+    if placeholder.FollowStop then placeholder.FollowStop() end
     local cols = SnapColumnsFromWidth(placeholder:GetWidth())
-    SetColumns(cols)                 -- re-renders; OnWindowResized snaps the placeholder
+    SetColumns(cols)                               -- no-op if the live follow already applied this count
+    -- Snap the placeholder back to the window's real size. SetColumns only re-renders when the count
+    -- changes, and during the drag it usually already has, so do it explicitly from the window.
+    local f = Window.Frame()
+    if f and f:GetWidth() > 0 then placeholder:SetSize(f:GetSize())
+    else placeholder:SetSize(Window.SizeForColumns(cols)) end
+    OnPlaceholderMoved(placeholder)                -- save the (possibly re-normalised) anchor
     placeholder.label:SetText("KondoBags  " .. cols .. " columns")
-  end)
-  placeholder:SetScript("OnSizeChanged", function(self, w)
-    if self.resizing then self.label:SetText("KondoBags  " .. SnapColumnsFromWidth(w) .. " columns") end
   end)
 
   lib:AddFrame(placeholder, OnPlaceholderMoved, defaultPos, "KondoBags")
+  -- The library parents a full-size selection overlay on the placeholder AFTER our grip exists, so
+  -- the grip would sit underneath it and never receive the mouse. Lift it above the overlay.
+  local selection = lib.frameSelections and lib.frameSelections[placeholder]
+  local above = (selection and selection:GetFrameLevel() or placeholder:GetFrameLevel()) + 5
+  grip:SetFrameLevel(above)
+  grip:SetFrameStrata(placeholder:GetFrameStrata())
+  placeholder.grip = grip
+
+  -- LIVE FOLLOW. The library only reports a position when the drag ENDS; the window would sit
+  -- still until the drop. While the placeholder is being moved (library drag) or sized (our grip),
+  -- mirror its position to the live window every frame, and during sizing snap the column count
+  -- as the width crosses each cell boundary so the window reflows under the mouse.
+  local function FollowStart() placeholder:SetScript("OnUpdate", function(self)
+    local point, _, _, x, y = self:GetPoint(1)
+    if not point then return end
+    local f = Window.Frame()
+    if f then f:ClearAllPoints(); f:SetPoint(point, UIParent, point, x, y) end
+    if self.resizing then
+      local cols = SnapColumnsFromWidth(self:GetWidth())
+      if cols ~= Placement().columns then
+        SetColumns(cols)                           -- window reflows; placeholder is left to Blizzard
+        self.label:SetText("KondoBags  " .. cols .. " columns")
+      end
+    end
+  end) end
+  local function FollowStop() placeholder:SetScript("OnUpdate", nil) end
+  placeholder.FollowStart, placeholder.FollowStop = FollowStart, FollowStop
+  if selection then
+    selection:HookScript("OnDragStart", FollowStart)
+    selection:HookScript("OnDragStop", FollowStop)
+  end
   lib:AddFrameSettingsButtons(placeholder, {
     { text = "Reset size", click = function() SetColumns(10) end },
+  })
+  -- "Lock position": unchecked (default) = the window can be dragged by its frame at any time, as
+  -- most addons do. Checked = it moves only in Edit Mode. Saved per character.
+  lib:AddFrameSettings(placeholder, {
+    {
+      kind = lib.SettingType.Checkbox,
+      name = "Lock position",
+      default = false,
+      get = function() return Placement().locked == true end,
+      set = function(_, value) Placement().locked = value and true or false end,
+    },
   })
   return placeholder
 end
@@ -120,7 +176,11 @@ local function OnEnter()
   CreatePlaceholder()
   local p = Placement()
   defaultPos.point, defaultPos.x, defaultPos.y = "CENTER", 0, 0
-  local w, h = Window.SizeForColumns(p.columns or 10)
+  -- Size from the live window when it exists (it includes the 3x section gaps the renderer adds);
+  -- fall back to the theme estimate when the window has never been built.
+  local live = Window.Frame()
+  local w, h
+  if live and live:GetWidth() > 0 then w, h = live:GetSize() else w, h = Window.SizeForColumns(p.columns or 10) end
   placeholder:SetSize(w, h)
   placeholder:ClearAllPoints()
   placeholder:SetPoint(p.point, UIParent, p.point, p.x, p.y)
