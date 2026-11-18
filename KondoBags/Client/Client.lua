@@ -46,7 +46,10 @@ end
 -- by typed slots, which is what a non-family item reports (0). Pure Lua (tests).
 function Client.ItemFitsKind(itemFamily, kind)
   if not kind or kind == "general" then return true end
-  if kind == "reagent" then return (itemFamily or 0) ~= 0 or false end   -- reagent bag has no family bit; see note
+  -- The Mainline reagent bag has no family bit, so family bits cannot answer for it. Until the client
+  -- gives a reagent predicate, ANY family-bagged item (arrows, herbs) is refused and ordinary items
+  -- are allowed: wrong only for non-reagent ordinary items, never for typed ones.
+  if kind == "reagent" then return (itemFamily or 0) == 0 end
   local f = itemFamily or 0
   for bit, k in pairs(Client.KIND_BY_BIT) do
     if k == kind then return f % (bit * 2) >= bit end

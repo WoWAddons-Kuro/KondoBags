@@ -25,9 +25,14 @@ function P.FreeSlots(bag)
 end
 
 function P.BagKind(bag)
-  if Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag and bag == Enum.BagIndex.ReagentBag then return "reagent" end
+  -- Family bits first: a bag with a family IS that kind wherever it sits. Enum.BagIndex.ReagentBag (5)
+  -- is the reagent-bag SLOT, but Forever lets a profession bag be equipped there; a herb bag in that
+  -- slot is a herb bag, not a reagent bag. Only a family-less bag in slot 5 is the actual reagent bag.
   local _, family = P.FreeSlots(bag)
-  return Client.KindFromFamily(family)
+  local kind = Client.KindFromFamily(family)
+  if kind ~= "general" then return kind end
+  if Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag and bag == Enum.BagIndex.ReagentBag then return "reagent" end
+  return "general"
 end
 
 -- Icon of the equipped bag itself (for empty-cell backdrops of typed bags); nil for the backpack / keyring.
