@@ -295,6 +295,7 @@ end
 Cell_OnEnter = function(b)
   local cell, bag = b.cell, view.bag
   if not cell or not bag then return end
+  view.hoverButton = b
   bag:SetHover(cell)
   GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
   if cell.kind == Layout.CELL_DROP or cell.kind == Layout.CELL_INSERT then
@@ -315,7 +316,17 @@ Cell_OnEnter = function(b)
   GameTooltip:Show()
 end
 
-Cell_OnLeave = function() GameTooltip:Hide(); if view.bag then view.bag:SetHover(nil) end end
+-- When the layout re-flows under a stationary mouse, the button that WAS under it is re-dressed as a
+-- different cell and a neighbouring button now sits under the cursor. WoW then fires OnEnter on the
+-- new button and OnLeave on the old one, in either order. A trailing OnLeave must not wipe a hover
+-- the newer OnEnter just set, or the phantom closes and reopens every frame (the rightmost-item
+-- "spaz"). So OnLeave only clears the hover it owns.
+Cell_OnLeave = function(b)
+  GameTooltip:Hide()
+  if view.hoverButton ~= b then return end
+  view.hoverButton = nil
+  if view.bag then view.bag:SetHover(nil) end
+end
 
 -- ---------------------------------------------------------------------------
 -- render
@@ -380,6 +391,17 @@ function Window.Render()
     end
   end
   for i = ci + 1, #cells do cells[i]:Hide(); cells[i].cell = nil end
+
+  -- Re-sync hover after a re-flow: the mouse has not moved but the cell under it may have changed.
+  -- Do it from the frame actually under the cursor so a stale cell object is never reported.
+  if view.bag:HeldItem() then
+    for _, b in ipairs(cells) do
+      if b:IsShown() and b:IsMouseOver() then
+        if view.hoverButton ~= b or view.bag.hoverCell ~= b.cell then view.hoverButton = b; view.bag:SetHover(b.cell) end
+        break
+      end
+    end
+  end
 
   Window.ApplySearch(frame.Search:GetText())
   Carry_Sync()
