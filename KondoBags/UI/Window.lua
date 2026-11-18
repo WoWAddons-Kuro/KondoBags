@@ -249,6 +249,20 @@ local function DecorateSecure(b)
   b.emptyIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93); b.emptyIcon:Hide()
   b.dim = b.searchOverlay                              -- stock black overlay = our search dim
   b.normal = b:GetNormalTexture()                      -- stock Quickslot2 = our slotNormal target
+  -- Kind tint guard. Blizzard's ItemButton code whitens its NormalTexture from several paths that run
+  -- OUTSIDE DressCell (intrinsic OnShow, SetItemButtonQuality, ItemButtonMixin:UpdateItemContext...),
+  -- so an occupied typed cell lost its tint while an empty one kept it. Hook the texture's own
+  -- SetVertexColor: whenever anyone resets it to white while a kind tint is wanted, put the tint back.
+  if b.normal and not b.normal.kbTintHooked then
+    b.normal.kbTintHooked = true
+    local guard = false
+    hooksecurefunc(b.normal, "SetVertexColor", function(tex, r, g, bl)
+      if guard or not b.kindTint then return end
+      if r == 1 and g == 1 and bl == 1 then
+        guard = true; tex:SetVertexColor(unpack(b.kindTint)); guard = false
+      end
+    end)
+  end
   b.qborder = b.IconBorder
   b.count = b.Count
   b.secure = true
@@ -386,12 +400,11 @@ local function DressCell(b, cell, theme)
     tint = nil                                                                   -- no square edges on classic
   end
   local function ApplyNormalTint()
+    -- Remember the wanted tint on the button: the ItemButton intrinsic whitens its NormalTexture from
+    -- its own OnShow / item-update paths (which run AFTER DressCell, when Render shows the button), so
+    -- the colour is re-applied from Window.ReapplyKindTint after Show and from a hook on the whitener.
+    b.kindTint = normalTint
     if not normalTint then return end
-    -- Secure cells: the ItemButton intrinsic can swap its NormalTexture object after creation, so the
-    -- cached b.normal goes stale (only the first-created cell kept its tint). Re-fetch every time and
-    -- also go through the stock helper, which knows the current one.
-    if b.secure and b.GetNormalTexture then b.normal = b:GetNormalTexture() end
-    if b.secure and SetItemButtonNormalTextureVertexColor then SetItemButtonNormalTextureVertexColor(b, unpack(normalTint)) end
     if b.normal then b.normal:SetVertexColor(unpack(normalTint)) end
   end
   for _, e in ipairs(b.edges) do
