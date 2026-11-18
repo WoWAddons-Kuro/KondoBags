@@ -172,6 +172,22 @@ test("RemoveGroup: its slots get NEW top-left positions, zero moves; last group 
   ok(not bag:RemoveGroup(bag.store.list[1].id), "cannot remove the last group")
 end)
 
+test("first run seeds the Hearthstone into Keep by itemID, once; unpinning it later is respected", function()
+  local slots = Bag(6, { 0, 1, 2 })
+  slots[3].item = { itemID = S.HEARTHSTONE_ID, name = "Hearthstone" }       -- physical 2
+  local bag = B.New({ store = nil, slots = slots, columns = 6 })             -- nil store = fresh character
+  ok(bag.store.seeded, "seeded flag set")
+  ok(S.IsKept(bag.store, 2), "hearthstone slot is kept")
+  eq(Picture(bag), "_ _ _ 1 0 | 6848", "kept row shows the hearthstone (Picture prints itemID - 100)")
+  -- player unpins it (stock drag out = Release on scan); a later Reconcile must NOT re-pin it
+  S.Release(bag.store, 2, bag:IsFreeFn())
+  bag:SetSlots(slots)
+  ok(not S.IsKept(bag.store, 2), "stays unpinned after the player's choice")
+  -- a fresh character with no hearthstone at all: still a valid empty Keep
+  local bag2 = B.New({ store = nil, slots = Bag(4, { 0 }), columns = 4 })
+  ok(bag2.store.seeded); eq(#bag2.store.list[1].order, 0)
+end)
+
 -- ---------------------------------------------------------------------------
 -- BagState (controller), MOCK path -- the table is the bag
 -- ---------------------------------------------------------------------------

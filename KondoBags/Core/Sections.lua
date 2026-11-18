@@ -211,12 +211,28 @@ end
 --     missing ones appended at the top-left (a bag grew, a slot was never seen);
 --   * every group's order = its kept slots, once each; >= 1 group; then ReorderHoles.
 function Sections.Reconcile(store, slotCount, slots)
+  local fresh = false
   if type(store) ~= "table" or type(store.list) ~= "table" or type(store.kept) ~= "table" or type(store.map) ~= "table" then
     store = Sections.NewStore()
+    fresh = true
   end
   local function occupied(slot) return not slots or (slots[slot + 1] ~= nil and slots[slot + 1].item ~= nil) end
   local function isFree(slot) return not occupied(slot) end
   if #store.list == 0 then Sections.Create(store, Sections.DEFAULT_KEEP_NAME) end
+  -- First run on this character (store.seeded unset): the Hearthstone starts in Keep (SPECS/00 D10,
+  -- README). Seed by itemID once; store.seeded then stays true forever, so a player who later unpins
+  -- it is never fought. Zero server ops: the slot is simply marked kept before the map is built.
+  if (fresh or not store.seeded) and slots then
+    store.seeded = true
+    local keep = store.list[#store.list]            -- the default "Keep" group (created first, drawn last)
+    for i, ref in ipairs(slots) do
+      if ref.item and ref.item.itemID == Sections.HEARTHSTONE_ID and (ref.kind == nil or ref.kind == "general") then
+        local slot = i - 1
+        if not store.kept[slot] then store.kept[slot] = keep.id; keep.order[#keep.order + 1] = slot end
+        break
+      end
+    end
+  end
   -- kept: drop bad entries (they will be re-added to the map below as ordinary slots)
   for slot, gid in pairs(store.kept) do
     if type(slot) ~= "number" or slot < 0 or slot >= slotCount or not occupied(slot) or not Sections.Find(store, gid) then
