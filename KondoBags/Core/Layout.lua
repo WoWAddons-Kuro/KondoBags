@@ -8,14 +8,23 @@
 --     columns  = number,
 --     loose    = { KondoBags_SlotRef... },                                            -- incoming, bag order
 --     sections = { { id = KondoBags_SectionID, name, slots = { KondoBags_SlotRef... } }... },  -- display order
---     insertAt = KondoBags_InsertPoint | nil,   -- Shift-drag: where a phantom insert cell opens (see Build)
+--     cursorGap = KondoBags_CursorGap | nil,   -- Shift-drag: the phantom cell that opens under the mouse
 --   }
---   KondoBags_InsertPoint = { sectionID = KondoBags_SectionID, beforeRef = KondoBags_SlotRef | nil }  -- nil = at end
+--   KondoBags_CursorGap = { sectionID = KondoBags_SectionID, anchorRef = KondoBags_SlotRef | nil }
+--     anchorRef = the kept item the gap is attached to; nil = attached to the lock cell.
+--     RENDER RULE: the gap is drawn in the column the ANCHOR occupied and the anchor slides one cell
+--     LEFT (toward the lock). Rows are right-aligned, so this is the only placement that puts the gap
+--     exactly under a mouse that was hovering the anchor: the lock and everything up to and including
+--     the anchor shift left; everything right of the anchor stays put. anchorRef nil = the gap is the
+--     first cell after the lock.
 --   KondoBags_SlotRef = { bagID, slot, item = KondoBags_ItemView | nil }   -- item nil = empty slot
 --
 -- Output:
 --   KondoBags_LayoutResult = { rows = { KondoBags_LayoutRow... }, cellCount = number }
 --   KondoBags_LayoutRow    = { cells = { KondoBags_LayoutCell... }, sectionID = KondoBags_SectionID | nil }
+--   KondoBags_LayoutCell   = { kind = KondoBags_CellKind, col = number, ref = KondoBags_SlotRef | nil, sectionID,
+--                              anchorRef = KondoBags_SlotRef | nil }     -- gap cells only
+--   KondoBags_CellKind     = "slot" | "drop" | "gap"
 --   KondoBags_LayoutCell   = { kind = KondoBags_CellKind, col = number, ref = KondoBags_SlotRef | nil, sectionID }
 --   KondoBags_CellKind     = "slot" | "drop"
 --
@@ -31,7 +40,7 @@ ns = ns or {}
 local Layout = {}
 ns.Layout = Layout
 
-Layout.CELL_SLOT, Layout.CELL_DROP, Layout.CELL_INSERT = "slot", "drop", "insert"   -- insert: Shift-drag phantom target
+Layout.CELL_SLOT, Layout.CELL_DROP, Layout.CELL_GAP = "slot", "drop", "gap"   -- gap: the Shift-drag phantom under the mouse
 Layout.MIN_COLUMNS = 2
 
 local function LayoutRun(cells, columns, sectionID)
@@ -74,20 +83,19 @@ function Layout.Build(input)
 
   for _, section in ipairs(input.sections or {}) do
     local cells = { { kind = Layout.CELL_DROP, sectionID = section.id } }
-    -- Shift-drag insert mode: open a phantom "insert" cell at input.insertAt so the player can see
-    -- exactly where the held item will land. beforeRef nil = at the end of the section.
-    local ins = input.insertAt
-    local insHere = ins and ins.sectionID == section.id
-    local placed = false
-    for _, ref in ipairs(section.slots or {}) do
-      if insHere and not placed and ins.beforeRef == ref then
-        cells[#cells + 1] = { kind = Layout.CELL_INSERT, sectionID = section.id, beforeRef = ref }
-        placed = true
-      end
-      cells[#cells + 1] = { kind = Layout.CELL_SLOT, ref = ref, sectionID = section.id }
+    -- Shift-drag: the cursor gap. See KondoBags_CursorGap RENDER RULE above: the gap takes the
+    -- anchor's column and the anchor slides left, which in reading order means the gap cell is
+    -- emitted immediately AFTER the anchor (or right after the lock when anchorRef is nil).
+    local gap = input.cursorGap
+    local gapHere = gap and gap.sectionID == section.id
+    if gapHere and gap.anchorRef == nil then
+      cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = nil }
     end
-    if insHere and not placed then
-      cells[#cells + 1] = { kind = Layout.CELL_INSERT, sectionID = section.id, beforeRef = nil }
+    for _, ref in ipairs(section.slots or {}) do
+      cells[#cells + 1] = { kind = Layout.CELL_SLOT, ref = ref, sectionID = section.id }
+      if gapHere and gap.anchorRef == ref then
+        cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = ref }
+      end
     end
     Append(LayoutRun(cells, columns, section.id))
   end
@@ -96,7 +104,7 @@ function Layout.Build(input)
 end
 
 function Layout.RowCount(input, columns)
-  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections, insertAt = input.insertAt }).rows
+  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections, cursorGap = input.cursorGap }).rows
 end
 
 return Layout

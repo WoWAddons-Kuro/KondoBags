@@ -63,45 +63,47 @@ function BagState:Section(sectionID) return Sections.Find(self.store, sectionID)
 function BagState:IsHeld(ref) return self.held ~= nil and self.held == ref end
 function BagState:HeldItem() return self.held and self.held.item or nil end
 
--- Where the Shift-drag phantom goes: before the hovered kept item, or at the end when over the lock.
--- STICKY: opening the phantom shifts the hovered item one cell right, straight under the still mouse;
--- the view then reports a hover on that same item. That must not move the phantom again (it would
--- oscillate), so a hover on the item immediately right of the current phantom keeps the current point.
-function BagState:InsertPoint()
+-- The Shift-drag CURSOR GAP (KondoBags_CursorGap): the phantom cell drawn UNDER THE MOUSE while an
+-- item is carried with Shift down. Anchored to the kept item that was hovered (anchorRef) or to the
+-- lock (anchorRef nil); Layout draws the gap in the anchor's column and slides the anchor one cell left.
+-- THE RULE (owner, 2026-11-18): the gap opens where the mouse is and does NOT move again until the
+-- mouse enters a cell naming a DIFFERENT anchor. Re-renders, the anchor sliding under the still
+-- cursor, hovering the gap itself, OnLeave noise: none of that moves it.
+function BagState:CursorGap()
   if not self.held or not self.insertMode then return nil end
-  -- THE RULE (owner, 2026-11-18): the phantom opens where the mouse is and does NOT move again until
+  -- A stored fact (set by UpdateCursorGap), never derived from the current hover on read.
   -- the mouse enters a cell that names a DIFFERENT target. It is a stored fact (set by
-  -- UpdateInsertPoint), never derived from the current hover on read.
-  return self.insertPoint
+  -- UpdateCursorGap), never derived from the current hover on read.
+  return self.cursorGap
 end
 
 -- What a hovered cell targets: the slot it shows (insert before it), or "end" over the lock.
 -- nil for cells outside a section and for the phantom itself.
-local function TargetKeyForCell(c)
+local function AnchorForCell(c)
   if not c or not c.sectionID then return nil end
-  if c.kind == Layout.CELL_SLOT and c.ref then return c.ref.slotIndex, c.ref end
-  if c.kind == Layout.CELL_DROP then return "end", nil end
+  if c.kind == Layout.CELL_SLOT and c.ref then return c.ref, c.ref.slotIndex end
+  if c.kind == Layout.CELL_DROP then return nil, "lock" end
   return nil
 end
 
 -- Move the phantom only if the hovered cell names a different target than the current point.
-local function UpdateInsertPoint(self)
+local function UpdateCursorGap(self)
   local c = self.hoverCell
-  local key, beforeRef = TargetKeyForCell(c)
+  local anchorRef, key = AnchorForCell(c)
   if key == nil then return false end                               -- phantom / off-section: hold
-  local cur = self.insertPoint
+  local cur = self.cursorGap
   if cur and cur.sectionID == c.sectionID and cur.key == key then return false end
-  self.insertPoint = { sectionID = c.sectionID, beforeRef = beforeRef, key = key }
+  self.cursorGap = { sectionID = c.sectionID, anchorRef = anchorRef, key = key }
   return true
 end
 
-local function ResetInsertPoint(self)
-  self.insertPoint = nil
+local function CloseCursorGap(self)
+  self.cursorGap = nil
 end
 
 function BagState:Layout(columns)
   local input = Sections.Partition(self.store, self.slots, columns or self.columns)
-  input.insertAt = self:InsertPoint()
+  input.cursorGap = self:CursorGap()
   return Layout.Build(input)
 end
 
@@ -128,7 +130,7 @@ end
 function BagState:Pickup(ref)
   if not ref or not ref.item then return false end
   self.held = ref
-  ResetInsertPoint(self)
+  CloseCursorGap(self)
   self:Emit("cursor")
   return true
 end
@@ -136,7 +138,7 @@ end
 function BagState:ClearCursor()
   if not self.held then return false end
   self.held = nil
-  ResetInsertPoint(self)
+  CloseCursorGap(self)
   self:Emit("cursor")
   return true
 end
@@ -144,30 +146,28 @@ end
 function BagState:SetHover(cell)
   if self.hoverCell == cell then return end
   self.hoverCell = cell
-  if self.held and self.insertMode and UpdateInsertPoint(self) then self:Emit("cursor") end
+  if self.held and self.insertMode and UpdateCursorGap(self) then self:Emit("cursor") end
 end
 
 -- Same as SetHover but never emits: for the view's post-render re-sync, which must not trigger
--- another render (see UI/Window.lua Render). The caller checks InsertPoint() before/after.
-function BagState:SetHoverSilent(cell)
-  self.hoverCell = cell
-end
 
 function BagState:SetInsertMode(on)
   on = on and true or false
   if self.insertMode == on then return end
   self.insertMode = on
-  if on then UpdateInsertPoint(self) else ResetInsertPoint(self) end   -- open where the mouse already is
+  if on then UpdateCursorGap(self) else CloseCursorGap(self) end   -- open where the mouse already is
   if self.held then self:Emit("cursor") end
 end
 
--- Pin a LOOSE held item into `section` (visually before `beforeRef`, or first). Physical: section
+
 -- grows by taking slot boundary-1; the item is swapped there if it is not there already (D11).
--- Pin a LOOSE held item into `group` (visually before `beforeRef`, or first). Physical (D11): the
+
 -- keep range grows by taking slot boundary-1; one swap brings the item there unless already there.
-local function PinHeld(self, held, group, beforeRef)
-  local beforeSlot = beforeRef and beforeRef.slotIndex or nil
-  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, beforeSlot)
+-- Pin a LOOSE held item into `group` at the cursor gap anchored to `anchorRef` (nil = right after
+-- the lock). Physical (D11): keep grows by taking slot boundary-1; one swap brings the item there.
+local function PinHeldAtGap(self, held, group, anchorRef)
+  local anchorSlot = anchorRef and anchorRef.slotIndex or nil
+  local moves = Sections.PinFromIncoming(self.store, group, held.slotIndex, anchorSlot)
   self:ApplyMoves(moves)
 end
 
@@ -176,23 +176,25 @@ function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
   local heldKept = Sections.IsKept(self.store, held.slotIndex)
-  local function done() self.held = nil; ResetInsertPoint(self); self:Emit("changed"); return true end
+  local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
 
-  -- Group targets: lock cell, Shift phantom, or any group cell while Shift is down (D12: all groups
+  -- Group targets: lock cell, the cursor gap, or any group cell while Shift is down (D12: all groups
   -- share ONE physical keep range, so any group can be pinned into or reordered across).
   local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
-  local insertCell = cell.kind == Layout.CELL_INSERT
-  if targetGroup and (cell.kind == Layout.CELL_DROP or insertCell or self.insertMode) then
-    local point = insertCell and { beforeRef = cell.beforeRef }
-      or (self.insertMode and self:InsertPoint()) or { beforeRef = nil }
-    if cell.kind == Layout.CELL_SLOT and not self.insertMode then point = { beforeRef = cell.ref } end
+  local onGap = cell.kind == Layout.CELL_GAP
+  if targetGroup and (cell.kind == Layout.CELL_DROP or onGap or self.insertMode) then
+    -- Where the item lands: the gap's anchor (dropped on the gap, or anywhere in the group with
+    -- Shift down), or the lock (plain drop on the lock = first).
+    local anchorRef
+    if onGap then anchorRef = cell.anchorRef
+    elseif self.insertMode then local gap = self:CursorGap(); anchorRef = gap and gap.anchorRef or nil
+    else anchorRef = nil end
     if heldKept then
-      -- kept -> a group spot: visual move only (within or across groups)
-      if point.beforeRef then Sections.MoveBefore(self.store, held.slotIndex, point.beforeRef.slotIndex)
-      else Sections.MoveToEnd(self.store, targetGroup, held.slotIndex) end
+      -- kept -> a gap in a group: visual move only (within or across groups)
+      Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorRef and anchorRef.slotIndex or nil)
       return done()
     end
-    PinHeld(self, held, targetGroup, point.beforeRef)
+    PinHeldAtGap(self, held, targetGroup, anchorRef)
     return done()
   end
 
@@ -202,8 +204,8 @@ function BagState:Drop(cell)
   local targetKept = Sections.IsKept(self.store, target.slotIndex)
 
   if heldKept and targetKept then
-    -- kept onto kept, no Shift: take its visual position (any group)
-    Sections.MoveBefore(self.store, held.slotIndex, target.slotIndex)
+    -- kept onto kept, no Shift: take that item's visual position (any group)
+    Sections.MoveToPositionOf(self.store, held.slotIndex, target.slotIndex)
     return done()
   end
 
@@ -220,7 +222,7 @@ function BagState:Drop(cell)
   return done()
 end
 
--- The + button: a new empty group drawn after the existing ones.
+-- The + button: a new empty group drawn FIRST, directly under incoming.
 function BagState:AddGroup(name)
   local g = Sections.Create(self.store, name)
   self:Emit("changed")

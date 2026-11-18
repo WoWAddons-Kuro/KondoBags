@@ -72,14 +72,18 @@ test("layout: a section is one lock cell then its items, below incoming", functi
   eq(r.rows[2].cells[2].kind, L.CELL_SLOT); eq(r.rows[2].cells[2].col, 4)
 end)
 
-test("layout: empty section still shows its lock cell; Shift insert cell appears at insertAt", function()
+test("layout: empty group still shows its lock; the cursor gap opens in the ANCHOR's column (anchor slides left)", function()
   local r = L.Build({ columns = 4, loose = {}, sections = { { id = "s1", slots = {} } } })
   eq(#r.rows[1].cells, 1); eq(r.rows[1].cells[1].kind, L.CELL_DROP)
   local a, b = { slotIndex = 8, item = Item(1) }, { slotIndex = 9, item = Item(2) }
-  r = L.Build({ columns = 6, loose = {}, sections = { { id = "s1", slots = { a, b } } }, insertAt = { sectionID = "s1", beforeRef = b } })
+  -- no gap: lock@4 a@5 b@6.  Gap anchored to `a` (mouse was over a at col 5): lock@3 a@4 GAP@5 b@6
+  local secs = { { id = "s1", slots = { a, b } } }
+  r = L.Build({ columns = 6, loose = {}, sections = secs, cursorGap = { sectionID = "s1", anchorRef = a } })
   local kinds = {}
-  for _, c in ipairs(r.rows[1].cells) do kinds[#kinds + 1] = c.kind end
-  eq(table.concat(kinds, ","), "drop,slot,insert,slot")
+  for _, c in ipairs(r.rows[1].cells) do kinds[#kinds + 1] = c.kind .. "@" .. c.col end
+  eq(table.concat(kinds, ","), "drop@3,slot@4,gap@5,slot@6")
+  r = L.Build({ columns = 6, loose = {}, sections = secs, cursorGap = { sectionID = "s1", anchorRef = nil } })
+  eq(r.rows[1].cells[2].kind, L.CELL_GAP, "nil anchor = right after the lock")
 end)
 
 -- ---------------------------------------------------------------------------
@@ -88,7 +92,7 @@ end)
 test("partition: incoming is highest slot first (slot 0 bottom-right); keep follows order", function()
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
   eq(Picture(bag), "5 4 3 2 1 0 | 6 7 8")
-  S.MoveBefore(bag.store, 8, 6)
+  S.MoveToPositionOf(bag.store, 8, 6)
   eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7", "visual reorder, no physical move")
 end)
 
@@ -115,7 +119,7 @@ test("RemoveGroup: items drop into incoming via the lowest keep slot; loot order
   -- keep = slots 6,7,8 in ONE group; add a second group and move item 8 into it, then remove that group
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
   local g2 = bag:AddGroup("Second")                       -- drawn first
-  S.MoveToEnd(bag.store, g2, 8)                           -- item 8 now shows in g2
+  S.MoveToGap(bag.store, g2, 8, nil)                      -- item 8 now shows in g2 (gap after its lock)
   eq(Picture(bag), "5 4 3 2 1 0 | 8 6 7")                 -- groups print in order: g2 (8) then Keep (6 7)
   ok(bag:RemoveGroup(g2.id))
   -- slot 8 swapped down into slot 6 (the lowest keep slot), slot 6 released to incoming
@@ -154,13 +158,16 @@ test("drop kept onto OCCUPIED incoming: plain swap, the displaced item is now ke
   eq(bag.store.boundary, 6, "boundary unchanged")
 end)
 
-test("pin loose onto lock: swap into boundary-1 then grow; new item sits right of the lock", function()
+test("pin loose onto lock: items above it SHIFT down (no swap), keep grows; new item sits right of the lock", function()
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   ok(bag:Pickup(bag.slots[3]))                  -- item 2 at slot 2
   ok(bag:Drop(LockCell(bag)))
-  -- 2<->5 swap, boundary 6->5: incoming (slots 4..0) reads 4 3 5 1 0 ; keep = new(5) first
-  eq(Picture(bag), "4 3 5 1 0 | 2 6 7 8")
+  -- Shift: 3->2, 4->3, 5->4, item 2 -> slot 5; boundary 6->5. Incoming (slots 4..0) keeps its order
+  -- with the gap at slot 2 closed: 5 4 3 1 0. Keep = new first.
+  eq(Picture(bag), "5 4 3 1 0 | 2 6 7 8")
   eq(bag.store.boundary, 5)
+  eq(bag.slots[3].item.itemID, 103, "item 3 shifted down into slot 2")
+  eq(bag.slots[6].item.itemID, 102, "item 2 now at slot 5 (the new lowest keep slot)")
 end)
 
 test("pin the item already at boundary-1: zero moves", function()
@@ -191,35 +198,48 @@ test("kept onto kept: visual reorder only", function()
   eq(bag.slots[9].item.itemID, 108, "no physical move")
 end)
 
-test("Shift-drag: phantom opens at hover; dropping a LOOSE item there pins it at that index", function()
+test("Shift-drag: the cursor gap opens in the hovered item's column; dropping a LOOSE item lands there", function()
   local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
   ok(bag:Pickup(bag.slots[3]))                  -- item 2
-  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 8))
-  local ins
-  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_INSERT then ins = c end end end
-  ok(ins and ins.beforeRef.slotIndex == 8, "phantom before item 8")
-  ok(bag:Drop(ins))
-  eq(Picture(bag), "4 3 5 1 0 | 6 7 2 8")
+  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 7))        -- hover item 7 (keep row: lock 6 7 8)
+  local gap
+  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
+  ok(gap and gap.anchorRef and gap.anchorRef.slotIndex == 7, "gap anchored to item 7")
+  ok(bag:Drop(gap))
+  eq(Picture(bag), "5 4 3 1 0 | 6 7 2 8", "item 2 landed right after 7; incoming shifted, order kept")
   bag:SetInsertMode(false)
 end)
 
-test("Shift-drag over the RIGHTMOST kept item is stable: phantom stays while the shifted item re-hovers", function()
-  -- Opening the phantom before the last item pushes that item one cell right, under the still mouse.
-  -- The view then reports hover on that same item again; the phantom must not jump.
-  local bag = B.New({ store = KeepStore(9, 3), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[3]))
-  bag:SetInsertMode(true)
-  bag:SetHover(Cell(bag, 8))
-  local function phantomBefore()
-    for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
-      if c.kind == L.CELL_INSERT then return c.beforeRef and c.beforeRef.slotIndex end
+test("Shift-drag over the RIGHTMOST kept item: gap opens at the right wall, item slides left, and holds", function()
+  -- before:        lock@6 18@7 19@8 20@9 21@10         (10 columns)
+  -- hover 21:      lock@5 18@6 19@7 20@8 21@9 GAP@10   <- gap exactly where the mouse is
+  local slots = Bag(22, { 0, 1, 2, 3, 4, 5, 18, 19, 20, 21 })
+  local st = S.NewStore(22); st.boundary = 18; st.list[1].order = { 18, 19, 20, 21 }
+  local bag = B.New({ store = st, slots = slots, columns = 10 })
+  local function keepRow()
+    for _, r in ipairs(bag:Layout().rows) do if r.sectionID then
+      local t = {}
+      for _, c in ipairs(r.cells) do
+        local label = c.kind == L.CELL_GAP and "GAP" or c.kind == L.CELL_DROP and "lock" or tostring(c.ref.slotIndex)
+        t[#t + 1] = label .. "@" .. c.col
+      end
+      return table.concat(t, " ")
     end end
   end
-  eq(phantomBefore(), 8)
-  bag:SetHover(nil); bag:SetHover(Cell(bag, 8))     -- the re-hover the view produces after the re-flow
-  eq(phantomBefore(), 8, "no oscillation")
-  ok(bag:Drop(Cell(bag, 8)))                         -- dropping on the item (Shift still down) lands at the phantom
-  eq(Picture(bag), "4 3 5 1 0 | 6 7 2 8")
+  eq(keepRow(), "lock@6 18@7 19@8 20@9 21@10")
+  ok(bag:Pickup(bag.slots[3]))
+  bag:SetHover(Cell(bag, 21)); bag:SetInsertMode(true)
+  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10")
+  -- the still mouse is now over the gap; hovering it must not move it
+  local gap; for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
+  bag:SetHover(nil); bag:SetHover(gap)
+  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "stable over the gap")
+  -- re-hovering 21 (same anchor) must not move it either
+  bag:SetHover(nil); bag:SetHover(Cell(bag, 21))
+  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "same anchor: holds")
+  ok(bag:Drop(gap))
+  eq(st.list[1].order[#st.list[1].order], 17, "pinned item is LAST (slot 17 = new boundary-1), i.e. right of 21")
+  eq(st.boundary, 17)
 end)
 
 test("loose onto loose / empty: stock swap and place", function()

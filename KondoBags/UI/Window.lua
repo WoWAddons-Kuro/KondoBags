@@ -286,9 +286,9 @@ local function DressCell(b, cell, theme)
     end
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     SetGlyph(b, theme.dropGlyph)
-  elseif cell.kind == Layout.CELL_INSERT then
-    -- Shift-drag phantom target: same lock glyph, brighter, so it reads as "this is where it lands"
-    SetGlyph(b, theme.insertGlyph or theme.dropGlyph)
+  elseif cell.kind == Layout.CELL_GAP then
+    -- Shift-drag cursor gap: the cell under the mouse where the carried item will land; brighter lock glyph
+    SetGlyph(b, theme.gapGlyph or theme.dropGlyph)
   end
 end
 
@@ -337,7 +337,7 @@ Cell_OnEnter = function(b)
   view.hoverButton = b
   bag:SetHover(cell)
   GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
-  if cell.kind == Layout.CELL_DROP or cell.kind == Layout.CELL_INSERT then
+  if cell.kind == Layout.CELL_DROP or cell.kind == Layout.CELL_GAP then
     local s = bag:Section(cell.sectionID)
     local n = s and ns.Sections.ItemCount(s) or 0
     GameTooltip:SetText((s and s.name ~= "" and s.name) or "Section", 1, 1, 1)

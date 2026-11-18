@@ -5,7 +5,7 @@
 -- PHYSICALLY there are exactly two ranges in the flat combined bag (slots 0..N-1, Blizzard order):
 --   incoming = slots 0 .. boundary-1      Blizzard's loot order; never reordered by us
 --   keep     = slots boundary .. N-1      always fully OCCUPIED, so loot never lands here
--- One boundary. Pin = grow keep by taking slot boundary-1 (one swap brings the item). Unpin = the
+-- One boundary. Pin = grow keep by taking slot boundary-1 (items above it SHIFT down one; loot order kept). Unpin = the
 -- item leaves to an incoming slot; the hole is filled from keep's LOWEST slot, which is released.
 --
 -- VISUALLY the keep range is drawn as one or more GROUPS, each with its own lock cell. A group is a
@@ -38,7 +38,7 @@ function Sections.NewStore(slotCount)
   return store
 end
 
--- Add an EMPTY group (drawn after the existing ones). The + button.
+-- Add an EMPTY group (drawn FIRST, directly under incoming). The + button.
 function Sections.Create(store, name)
   local id = "s" .. store.nextID
   store.nextID = store.nextID + 1
@@ -99,18 +99,34 @@ end
 -- the caller applies the same moves to the slot contents)
 -- ---------------------------------------------------------------------------
 
--- Pin the item at incoming `fromSlot` into `group`, visually BEFORE `beforeSlot` (nil = first).
--- Keep grows by taking slot boundary-1; one swap brings the item there unless it is there already.
-function Sections.PinFromIncoming(store, group, fromSlot, beforeSlot)
+
+
+-- Where a slot goes in `group.order` to land in the cursor gap anchored to `anchorSlot`:
+--   the gap is drawn in the anchor's column and the anchor slides left, so in reading order the new
+--   entry sits immediately AFTER the anchor; anchorSlot nil = the gap is right after the lock = first.
+local function GapIndex(group, anchorSlot)
+  local i = anchorSlot and IndexInOrder(group, anchorSlot)
+  return i and (i + 1) or 1
+end
+
+-- Pin the item at incoming `fromSlot` into `group`, landing in the cursor gap anchored to
+-- `anchorSlot` (nil = right after the lock). Keep grows by taking slot boundary-1; one swap brings
+-- the item there unless it is there already.
+function Sections.PinFromIncoming(store, group, fromSlot, anchorSlot)
+  -- Pin the item at incoming `fromSlot` into `group`, landing in the cursor gap anchored to
+  -- `anchorSlot` (nil = right after the lock). Keep grows by taking slot boundary-1. The item is
+  -- carried there by a SHIFT, not a swap: every incoming item above it steps down one slot
+  -- (fromSlot+1 -> fromSlot, ..., boundary-1 -> boundary-2), so incoming stays contiguous and in
+  -- Blizzard's loot order (owner, 2026-11-18; a swap would drop the displaced item mid-incoming).
+  -- Expressed as a chain of adjacent swaps, each carrying the pinned item one slot up.
   local moves = {}
   local target = store.boundary - 1
-  if fromSlot ~= target then
-    moves[#moves + 1] = { from = fromSlot, to = target }
-    RenameSlotInOrders(store, fromSlot, target)
+  for s = fromSlot, target - 1 do
+    moves[#moves + 1] = { from = s, to = s + 1 }
   end
+  -- No order entries name incoming slots, so nothing to rename for the shift itself.
   store.boundary = target
-  local at = beforeSlot and IndexInOrder(group, beforeSlot) or 1
-  table.insert(group.order, at, target)
+  table.insert(group.order, GapIndex(group, anchorSlot), target)
   return moves
 end
 
@@ -131,8 +147,19 @@ function Sections.UnpinToIncoming(store, slot, toSlot, toSlotOccupied)
   return moves
 end
 
--- Move a kept `slot` to right before `otherSlot` (any group; moves between groups too). Visual only.
-function Sections.MoveBefore(store, slot, otherSlot)
+
+-- Move a kept `slot` into the cursor gap of `group` anchored to `anchorSlot` (nil = right after the
+-- lock). Works across groups. Visual only.
+function Sections.MoveToGap(store, group, slot, anchorSlot)
+  if slot == anchorSlot then return false end
+  RemoveSlotFromOrders(store, slot)
+  table.insert(group.order, GapIndex(group, anchorSlot), slot)
+  return true
+end
+
+-- Move a kept `slot` to the visual position `otherSlot` occupies (no-Shift drop onto a kept item):
+-- `slot` takes that cell; `otherSlot` and everything after it shift right. Works across groups.
+function Sections.MoveToPositionOf(store, slot, otherSlot)
   if slot == otherSlot then return false end
   local target = Sections.GroupOfSlot(store, otherSlot)
   if not target then return false end
@@ -141,17 +168,11 @@ function Sections.MoveBefore(store, slot, otherSlot)
   return true
 end
 
--- Move a kept `slot` to the end of `group`. Visual only.
-function Sections.MoveToEnd(store, group, slot)
-  if group.order[#group.order] == slot then return false end
-  RemoveSlotFromOrders(store, slot)
-  group.order[#group.order + 1] = slot
-  return true
-end
+-- (MoveToEnd removed 2026-11-18: superseded by MoveToGap with a nil anchor / last-item anchor.)
 
 function Sections.NoteSwapWithin(store, a, b) RenameSlotInOrders(store, a, b) end
 
--- Remove a group; its slots join the previous group (or the next if it was first). Needs >= 2 groups.
+
 -- Remove a group. Its items drop into INCOMING: each of its slots is swapped down into keep's lowest
 -- slot (boundary) and that slot is released, so the released slots are always the lowest ones and
 -- Blizzard's loot order is preserved (D11). Returns the moves, or nil if the group is unknown or it
