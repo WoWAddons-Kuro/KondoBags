@@ -25,6 +25,19 @@ ns.Theme = Theme
 
 local registry = {}   -- KondoBags_ThemeID -> KondoBags_Theme
 
+-- Border tint per KondoBags_SlotKind for restricted-bag cells: { r, g, b, a }. Shared default so both
+-- themes agree on what colour means what; a theme may override per kind.
+Theme.DEFAULT_KIND_TINT = {
+  quiver     = { 0.85, 0.55, 0.20, 0.55 },   -- orange
+  ammo       = { 0.85, 0.55, 0.20, 0.55 },   -- orange
+  soul       = { 0.60, 0.30, 0.85, 0.55 },   -- purple
+  herb       = { 0.30, 0.80, 0.30, 0.55 },   -- green
+  enchanting = { 0.30, 0.60, 0.95, 0.55 },   -- blue
+  mining     = { 0.70, 0.60, 0.40, 0.55 },   -- brown/bronze
+  keyring    = { 0.85, 0.80, 0.30, 0.55 },   -- gold
+  reagent    = { 0.30, 0.80, 0.80, 0.55 },   -- teal
+}
+
 function Theme.Register(theme)
   registry[theme.id] = theme
 end

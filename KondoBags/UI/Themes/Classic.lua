@@ -42,6 +42,19 @@ ns.Theme.Register({
   -- Section drop cell: a faded lock icon over the empty-slot art. Drop an item on it to pin it there.
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 7 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.85, inset = 7 },  -- Shift-drag cursor gap
+  -- Restricted-bag slots (KondoBags_SlotKind): faded glyph behind EMPTY cells and a subtle border tint
+  -- on every cell of that kind (tint is toggled by KondoBagsDB.kindTint).
+  kindGlyph = {
+    quiver     = { file = "Interface\\Icons\\INV_Ammo_Arrow_02",       desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    ammo       = { file = "Interface\\Icons\\INV_Ammo_Bullet_01",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    soul       = { file = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    herb       = { file = "Interface\\Icons\\INV_Misc_Herb_01",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    enchanting = { file = "Interface\\Icons\\INV_Enchant_DustIllusion", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    mining     = { file = "Interface\\Icons\\INV_Pick_02",             desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    keyring    = { file = "Interface\\Icons\\INV_Misc_Key_14",         desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    reagent    = { file = "Interface\\Icons\\INV_Misc_Dust_02",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+  },
+  kindTint = ns.Theme.DEFAULT_KIND_TINT,
   divider = nil,
   junkTint = { 0.55, 0.55, 0.55 },
 })

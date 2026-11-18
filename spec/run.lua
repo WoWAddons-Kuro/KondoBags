@@ -36,7 +36,7 @@ end
 local function Picture(bag)
   local inc, keep = {}, {}
   for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do
-    if c.kind == L.CELL_SLOT then
+    if c.kind == L.CELL_SLOT and not r.typed then
       local v = c.ref.item and (c.ref.item.itemID - 100) or "_"
       if c.sectionID then keep[#keep + 1] = v else inc[#inc + 1] = v end
     end
@@ -288,6 +288,32 @@ test("loose onto loose / empty: stock swap and place", function()
   eq(Picture(bag), "_ _ 2 _ 0 | 5")
   ok(bag:Pickup(bag.slots[1])); ok(bag:Drop(Cell(bag, 3)))
   eq(Picture(bag), "_ 0 2 _ _ | 5")
+end)
+
+-- ---------------------------------------------------------------------------
+-- Typed (restricted-bag) slots: ONE display-only run ABOVE incoming (D13.3)
+-- ---------------------------------------------------------------------------
+test("typed slots: one run above incoming, mixed kinds, do not shift the general index or Keep", function()
+  local all = Bag(6, { 0, 1, 5 })                                   -- general: slots 0..5, keep = {5}
+  all[#all + 1] = { bagID = 2, slot = 1, kind = "herb",   item = Item(900) }
+  all[#all + 1] = { bagID = 2, slot = 2, kind = "herb" }
+  all[#all + 1] = { bagID = 3, slot = 1, kind = "quiver", item = Item(901) }
+  local bag = B.New({ store = KeepStore(6, 1), slots = all, columns = 6 })
+  eq(#bag.slots, 6, "typed slots are not in the flat general list")
+  eq(#bag.typedSlots, 3)
+  eq(bag.store.boundary, 5); eq(Picture(bag), "_ _ _ 1 0 | 5")
+  local rows = bag:Layout().rows
+  ok(rows[1].typed, "first row is the typed run")
+  eq(#rows[1].cells, 3)
+  -- bag order reversed like incoming: quiver slot (last) is leftmost, herb slot 1 bottom-right
+  eq(rows[1].cells[1].slotKind, "quiver"); eq(rows[1].cells[3].slotKind, "herb")
+  eq(rows[1].cells[3].ref.item.itemID, 900)
+  ok(not rows[2].typed, "incoming follows")
+  -- pins to/from typed cells are refused
+  ok(bag:Pickup(bag.typedSlots[1]))
+  ok(not bag:Drop(LockCell(bag)), "typed item cannot be pinned"); bag:ClearCursor()
+  ok(bag:Pickup(bag.slots[1]))
+  ok(not bag:Drop(rows[1].cells[2]), "general item cannot be dropped on a typed cell")
 end)
 
 -- ---------------------------------------------------------------------------

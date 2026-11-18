@@ -6,10 +6,12 @@
 -- Input  (from Sections.Partition):
 --   KondoBags_LayoutInput = {
 --     columns  = number,
+--     typed    = { KondoBags_SlotRef... },                                            -- restricted-bag slots, ONE run above incoming
 --     loose    = { KondoBags_SlotRef... },                                            -- incoming, bag order
 --     sections = { { id = KondoBags_SectionID, name, slots = { KondoBags_SlotRef... } }... },  -- display order
 --     cursorGap = KondoBags_CursorGap | nil,   -- Shift-drag: the phantom cell that opens under the mouse
 --   }
+--   KondoBags_SlotKind = "general" | "quiver" | "ammo" | "soul" | "herb" | "enchanting" | "mining" | "keyring" | "reagent"
 --   KondoBags_CursorGap = { sectionID = KondoBags_SectionID, anchorRef = KondoBags_SlotRef | nil }
 --     anchorRef = the kept item the gap is attached to; nil = attached to the lock cell.
 --     RENDER RULE: the gap is drawn in the column the ANCHOR occupied and the anchor slides one cell
@@ -74,6 +76,15 @@ function Layout.Build(input)
       out.cellCount = out.cellCount + #r.cells
     end
   end
+
+  -- Restricted-bag slots: ONE run above incoming, every cell carrying its slot kind for the glyph/tint.
+  local typed = {}
+  for _, ref in ipairs(input.typed or {}) do
+    typed[#typed + 1] = { kind = Layout.CELL_SLOT, ref = ref, slotKind = ref.kind, typed = true }
+  end
+  local typedRows = LayoutRun(typed, columns, nil)
+  for _, r in ipairs(typedRows) do r.typed = true end
+  Append(typedRows)
 
   local incoming = {}
   for _, ref in ipairs(input.loose or {}) do

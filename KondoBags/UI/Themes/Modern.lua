@@ -24,6 +24,17 @@ ns.Theme.Register({
   slotBorder = { 0.55, 0.55, 0.55, 0.9 }, -- 1px ring, brighter than the panel
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
+  kindGlyph = {
+    quiver     = { file = "Interface\\Icons\\INV_Ammo_Arrow_02",       desaturate = true, alpha = 0.3, inset = 3 },
+    ammo       = { file = "Interface\\Icons\\INV_Ammo_Bullet_01",      desaturate = true, alpha = 0.3, inset = 3 },
+    soul       = { file = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02", desaturate = true, alpha = 0.3, inset = 3 },
+    herb       = { file = "Interface\\Icons\\INV_Misc_Herb_01",        desaturate = true, alpha = 0.3, inset = 3 },
+    enchanting = { file = "Interface\\Icons\\INV_Enchant_DustIllusion", desaturate = true, alpha = 0.3, inset = 3 },
+    mining     = { file = "Interface\\Icons\\INV_Pick_02",             desaturate = true, alpha = 0.3, inset = 3 },
+    keyring    = { file = "Interface\\Icons\\INV_Misc_Key_14",         desaturate = true, alpha = 0.3, inset = 3 },
+    reagent    = { file = "Interface\\Icons\\INV_Misc_Dust_02",        desaturate = true, alpha = 0.3, inset = 3 },
+  },
+  kindTint = ns.Theme.DEFAULT_KIND_TINT,
   divider = nil,
   junkTint = { 0.5, 0.5, 0.5 },
 })

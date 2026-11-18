@@ -225,9 +225,15 @@ end
 
 -- `slots` is { KondoBags_SlotRef... } indexed 1..N (slot index = i-1). Incoming comes out HIGHEST slot
 -- first (slot 0 is the bottom-right anchor, new loot opens a cell top-left). Then every group.
-function Sections.Partition(store, slots, columns)
+-- `slots` is the GENERAL flat list { KondoBags_SlotRef... } indexed 1..N (slot index = i-1). Incoming
+-- comes out HIGHEST slot first (slot 0 is the bottom-right anchor, new loot opens a cell top-left).
+-- `typedSlots` (optional) is { KondoBags_SlotRef... } of every restricted-bag slot (ref.kind ~= "general")
+-- in bag order; they form ONE run, drawn ABOVE incoming, with the same anchoring. Then every group.
+function Sections.Partition(store, slots, columns, typedSlots)
   local loose = {}
   for i = store.boundary, 1, -1 do loose[#loose + 1] = slots[i] end
+  local typed = {}
+  for i = #(typedSlots or {}), 1, -1 do typed[#typed + 1] = typedSlots[i] end
   local sections = {}
   for _, g in ipairs(store.list) do
     local sec = { id = g.id, name = g.name, slots = {} }
@@ -237,7 +243,7 @@ function Sections.Partition(store, slots, columns)
     end
     sections[#sections + 1] = sec
   end
-  return { columns = columns, loose = loose, sections = sections }
+  return { columns = columns, typed = typed, loose = loose, sections = sections }
 end
 
 -- Validate/repair a saved store against the current bag. Enforces: boundary in range; every keep

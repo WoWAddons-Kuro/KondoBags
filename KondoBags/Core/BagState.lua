@@ -29,9 +29,19 @@ local function IndexSlots(slots)
   return slots
 end
 
+-- Split the bag-order ref list into the GENERAL flat list (indexed, participates in incoming/Keep)
+-- and the typed list (restricted-bag slots, display only). ref.kind nil counts as "general".
+local function SplitSlots(all)
+  local general, typed = {}, {}
+  for _, ref in ipairs(all) do
+    if ref.kind and ref.kind ~= "general" then typed[#typed + 1] = ref else general[#general + 1] = ref end
+  end
+  return IndexSlots(general), typed
+end
+
 function BagState.New(opts)
   local self = setmetatable({}, BagState)
-  self.slots = IndexSlots(opts.slots or {})
+  self.slots, self.typedSlots = SplitSlots(opts.slots or {})
   self.store = Sections.Reconcile(opts.store, #self.slots, self.slots)
   self.columns = opts.columns or 10
   self.held = nil
@@ -102,7 +112,7 @@ local function CloseCursorGap(self)
 end
 
 function BagState:Layout(columns)
-  local input = Sections.Partition(self.store, self.slots, columns or self.columns)
+  local input = Sections.Partition(self.store, self.slots, columns or self.columns, self.typedSlots)
   input.cursorGap = self:CursorGap()
   return Layout.Build(input)
 end
@@ -121,7 +131,7 @@ function BagState:SetColumns(n)
 end
 
 function BagState:SetSlots(slots)
-  self.slots = IndexSlots(slots or {})
+  self.slots, self.typedSlots = SplitSlots(slots or {})
   self.store = Sections.Reconcile(self.store, #self.slots, self.slots)
   self.held = nil
   self:Emit("changed")
@@ -174,6 +184,9 @@ end
 function BagState:Drop(cell)
   local held = self.held
   if not held or not cell then return false end
+  -- Typed (restricted-bag) slots are display-only: no pin, no cross-kind move. Stock handles them.
+  if held.kind and held.kind ~= "general" then return false end
+  if cell.typed then return false end
   local heldKept = Sections.IsKept(self.store, held.slotIndex)
   local function done() self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true end
 

@@ -14,6 +14,7 @@ local function InitDB()
   if type(KondoBagsCharDB) ~= "table" then KondoBagsCharDB = {} end
   KondoBagsDB.version = KondoBagsDB.version or DB_VERSION
   KondoBagsDB.theme = KondoBagsDB.theme or "classic"
+  if KondoBagsDB.kindTint == nil then KondoBagsDB.kindTint = true end   -- border tint on restricted-bag cells
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   -- Sections live per character (SPECS/00 D2). Mock sections are kept apart so play data is never
   -- polluted by the mockup.
@@ -72,6 +73,10 @@ local function Slash(msg)
     local n = tonumber(rest)
     if n then EnsureBag():SetColumns(n) end
     Print("%d columns", EnsureBag().columns)
+  elseif cmd == "tint" then
+    KondoBagsDB.kindTint = not KondoBagsDB.kindTint
+    ns.Window.Render()
+    Print("bag-type border tint %s", KondoBagsDB.kindTint and "on" or "off")
   elseif cmd == "reset" then
     KondoBagsCharDB.mockSections = nil; InitDB()
     local wasShown = ns.Window.IsShown()

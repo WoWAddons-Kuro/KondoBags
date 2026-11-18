@@ -183,6 +183,7 @@ KondoBagsCharDB = {                       -- ## SavedVariablesPerCharacter
 }
 KondoBagsDB = {                           -- ## SavedVariables (account): display-only, nothing about sorting
   theme = "classic" | "modern",
+  kindTint = true,                        -- border tint on restricted-bag cells
 }
 ```
 
@@ -194,7 +195,7 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 
 **Starting point: the stock Combined Backpack, unchanged.** Same frame art, title bar, portrait, close button, search box, sort button, slot grid, money bar. The only thing classic bags lack is differentiation: the grid is one undifferentiated run of boxes. KondoBags adds *sections* on top of that grid and nothing else. **No labelled header rows, dividers or handles**: they stop it looking like the stock bag.
 
-**Grid.** Column count comes from the window width; the window is **drag-resizable in Edit Mode, snapping to whole cells** (`KondoBagsCharDB.window.columns`; rows follow from content). Every run of cells is **bottom-anchored like the stock bags**: its last row is full and any partial row is the top row, right-aligned, so free space appears top-left. Empty slots stay as empty slot art (a faded bag icon), exactly like stock. Restricted bags (quiver, soul, reagent) keep their stock windows in this iteration.
+**Grid.** Column count comes from the window width; the window is **drag-resizable in Edit Mode, snapping to whole cells** (`KondoBagsCharDB.window.columns`; rows follow from content). Every run of cells is **bottom-anchored like the stock bags**: its last row is full and any partial row is the top row, right-aligned, so free space appears top-left. Empty slots stay as empty slot art (a faded bag icon), exactly like stock. Restricted bags (quiver, herb, soul, …) are one extra run above incoming (D13.3).
 
 **Sections (D10).** The unsectioned remainder ("incoming") is drawn first. Below it, each section in display order is one run of cells: a single **drop cell** — stock empty-slot art with a faded lock glyph — immediately to the LEFT of the section's first item, then its items. Dropping a held item on the drop cell pins it into that section. No header, no divider, no handle. A new character starts with one section, **Keep**, holding Hearthstone, so the window reads as "the stock bag plus one more row with the hearthstone at the bottom-right".
 
@@ -228,7 +229,7 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
 
 1. **Keep never has a free slot.** A section is exactly as large as its item count. Whenever a Keep slot would become free, the item from Keep's **lowest** slot slides into it and that lowest slot is released to incoming (D11 shrink). Loot can therefore never land inside Keep.
 2. **Pinning SHIFTS incoming down from the hole nearest the top; it never swaps.** To land an item from incoming slot `f` in Keep, Keep claims slot `boundary-1`. Let `e` be the **highest** FREE incoming slot above `f` — the free slot closest to the blocking items at the top (or `f` itself if there is none). The item is placed at `e`, then only the items in `e+1 .. boundary-1` step down one slot and the pinned item arrives at `boundary-1`. Everything below `e` never moves; incoming stays in Blizzard's loot order. This is the minimal-movement choice (see Philosophy): the chain is as short as the free space allows. Cost is `boundary-1-e` adjacent moves plus one place (one `PickupContainerItem` pair each in M4); zero if `f == boundary-1`, one if `boundary-1` is free. An item from OUTSIDE the bag (`f` = nil: bank, mail, trade cursor) uses the same rule with `e` = the highest free incoming slot; no free slot means the pin cannot happen, exactly like stock.
-3. **Restricted bag types are additional incoming runs.** Quiver, ammo, soul, herb, enchanting, keyring, reagent: each is its own incoming-style run keyed by slot kind, drawn with the same bottom-anchored rule. **No Keep for alternate bag types** (decision: no; revisit only if a real need appears). Only `general` slots participate in the Keep range.
+3. **Restricted bag types are ONE display-only run ABOVE incoming.** Quiver, ammo, soul, herb, enchanting, mining, keyring, reagent slots are concatenated in bag order into a single run (never one run per kind: that would stack rows and eat the screen), drawn above incoming with the same bottom-anchored, slot-0-bottom-right rule. Each cell carries its `KondoBags_SlotKind`: empty cells show a faded glyph for the kind, and every cell gets a subtle border tint per kind (`KondoBagsDB.kindTint`, default on). They are **not** in the general flat index, so `boundary`, Keep and every pin rule ignore them; a drop from a typed cell onto a lock, or of anything onto a typed cell, is refused — stock handles those bags. **No Keep for alternate bag types.**
 4. **Bag swaps move nothing.** Keep positions are an **indirection map** (`group.order` lists slot indices; the view resolves them at render). There is no stored mapping from a visual Keep position to a bag/slot pair, so equipping, unequipping or rearranging bags re-indexes the flat slot list and `Reconcile` re-validates the ranges; no items are moved and no visual position changes unless the slot count itself shrank below the Keep range.
 
 ```
@@ -303,6 +304,7 @@ The intended complete list:
 | Setting | Values | Default | Where |
 |---|---|---|---|
 | Theme | classic / modern | classic | Settings panel |
+| Bag-type border tint | on / off | on | Settings panel (`/kondo tint` for now) |
 | Window position, scale and column count | — | — | **Edit Mode** (not a setting of ours) |
 
 Pins are managed in the window itself. Anything proposed beyond this list needs a reason it cannot be a fixed behaviour.

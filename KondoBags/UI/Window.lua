@@ -268,8 +268,13 @@ local function DressCell(b, cell, theme)
     b.normal:Hide()
   end
   if theme.slotFlat then b.bg:SetColorTexture(unpack(theme.slotFlat)); b.bg:Show() else b.bg:Hide() end
+  -- Restricted-bag cell: subtle border tint per slot kind (KondoBagsDB.kindTint toggles it).
+  local tint = cell.slotKind and theme.kindTint and theme.kindTint[cell.slotKind]
+  if tint and KondoBagsDB and KondoBagsDB.kindTint == false then tint = nil end
   for _, e in ipairs(b.edges) do
-    if theme.slotBorder then e:SetColorTexture(unpack(theme.slotBorder)); e:Show() else e:Hide() end
+    if tint then e:SetColorTexture(unpack(tint)); e:Show()
+    elseif theme.slotBorder then e:SetColorTexture(unpack(theme.slotBorder)); e:Show()
+    else e:Hide() end
   end
 
   b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.dim:Hide(); b.emptyIcon:Hide()
@@ -281,6 +286,8 @@ local function DressCell(b, cell, theme)
       if item.quality and item.quality >= 2 then b.qborder:SetVertexColor(QualityColor(item.quality)); b.qborder:Show() end
       if (item.count or 1) > 1 then b.count:SetText(item.count); b.count:Show() end
       if view.bag:IsHeld(cell.ref) then b:SetAlpha(0.4) end   -- "picked up"
+    elseif cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind] then
+      SetGlyph(b, theme.kindGlyph[cell.slotKind])
     elseif theme.slotEmptyIcon then
       SetGlyph(b, theme.slotEmptyIcon)
     end

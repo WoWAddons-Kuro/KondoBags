@@ -26,6 +26,10 @@ local items = {
   { itemID = 4540,  name = "Tough Hunk of Bread",     icon = I .. "INV_Misc_Food_11",       count = 4,  quality = 1 },
   { itemID = 3300,  name = "Rabbit's Foot",          icon = I .. "INV_Misc_MonsterScales_05", count = 2, quality = 0 },
   { itemID = 3304,  name = "Broken Fang",            icon = I .. "INV_Misc_MonsterFang_01", count = 3, quality = 0 },
+  { itemID = 2447,  name = "Peacebloom",             icon = I .. "INV_Misc_Flower_02",     count = 8,  quality = 1 },   -- 16
+  { itemID = 765,   name = "Silverleaf",             icon = I .. "INV_Misc_Herb_10",       count = 3,  quality = 1 },   -- 17
+  { itemID = 2512,  name = "Rough Arrow",            icon = I .. "INV_Ammo_Arrow_01",      count = 200, quality = 1 },  -- 18
+  { itemID = 2512,  name = "Rough Arrow",            icon = I .. "INV_Ammo_Arrow_01",      count = 137, quality = 1 },  -- 19
 }
 
 -- Which physical slots hold something; everything else is empty.
@@ -34,16 +38,22 @@ local items = {
 local filled = {
   [0] = { [1] = 1, [2] = 2, [3] = 3, [4] = 5, [5] = 6, [6] = 7, [11] = 8, [12] = 9, [13] = 10, [14] = 11, [15] = 12, [16] = 13 },
   [1] = { [2] = 14, [5] = 15, [6] = 4 },
+  [2] = { [1] = 16, [3] = 17 },             -- herb bag
+  [3] = { [1] = 18, [2] = 19 },             -- quiver
 }
-local sizes = { [0] = 16, [1] = 6 }
+local sizes = { [0] = 16, [1] = 6, [2] = 6, [3] = 6 }
+-- KondoBags_SlotKind per bag. General bags are the flat Keep/incoming index; typed bags are a
+-- separate display-only run above incoming (SPECS/00 D13.3).
+local kinds = { [0] = "general", [1] = "general", [2] = "herb", [3] = "quiver" }
 Mock.HEARTHSTONE_SLOT = 21   -- 0-based combined index of the hearthstone above
 
+-- Returns every slot in bag order; general slots first so the flat index is unchanged by typed bags.
 function Mock.Slots()
   local slots = {}
-  for bagID = 0, 1 do
+  for bagID = 0, 3 do
     for slot = 1, sizes[bagID] do
       local idx = filled[bagID][slot]
-      slots[#slots + 1] = { bagID = bagID, slot = slot, item = idx and items[idx] or nil }
+      slots[#slots + 1] = { bagID = bagID, slot = slot, kind = kinds[bagID], item = idx and items[idx] or nil }
     end
   end
   return slots
