@@ -240,6 +240,58 @@ end
 -- ---------------------------------------------------------------------------
 local Cell_OnClick, Cell_OnEnter, Cell_OnLeave, Cell_OnDragStart, Cell_OnReceiveDrag
 
+-- Two cell pools (D14):
+--   plain  -- our Buttons: lock cells, cursor-gap cells, and every slot of the MOCK bag
+--   secure -- ContainerFrameItemButtonTemplate: slots of the LIVE bag. Blizzard's own OnClick /
+--             OnDrag / OnEnter run (pickup, swap, split, use, sell, tooltip); the button reads its bag
+--             from parent:GetID() and its slot from self:GetID(), so each live cell is parented to a
+--             hidden per-bag holder frame. Re-parenting is not allowed in combat (see Render).
+local secureCells = {}          -- pool of secure item buttons
+local bagHolders = {}           -- bagID -> hidden Frame with SetID(bagID), child of frame.Grid
+
+local function BagHolder(bagID)
+  local h = bagHolders[bagID]
+  if not h then
+    h = CreateFrame("Frame", nil, frame.Grid)
+    h:SetID(bagID)
+    h:SetAllPoints(frame.Grid)
+    bagHolders[bagID] = h
+  elseif h:GetParent() ~= frame.Grid then
+    h:SetParent(frame.Grid); h:SetAllPoints(frame.Grid)
+  end
+  return h
+end
+
+-- Our overlay regions on a secure button: the theme's flat bg / 1px ring and the kind glyph. The
+-- template already owns icon, Count, IconBorder, NormalTexture, searchOverlay.
+local function DecorateSecure(b)
+  b.bg = b:CreateTexture(nil, "BACKGROUND", nil, -2); b.bg:SetAllPoints()
+  b.edges = {}
+  for e = 1, 4 do b.edges[e] = b:CreateTexture(nil, "BORDER") end
+  b.edges[1]:SetPoint("TOPLEFT", -1, 1);     b.edges[1]:SetPoint("TOPRIGHT", 1, 1);      b.edges[1]:SetHeight(1)
+  b.edges[2]:SetPoint("BOTTOMLEFT", -1, -1); b.edges[2]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[2]:SetHeight(1)
+  b.edges[3]:SetPoint("TOPLEFT", -1, 1);     b.edges[3]:SetPoint("BOTTOMLEFT", -1, -1);  b.edges[3]:SetWidth(1)
+  b.edges[4]:SetPoint("TOPRIGHT", 1, 1);     b.edges[4]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[4]:SetWidth(1)
+  b.emptyIcon = b:CreateTexture(nil, "BACKGROUND", nil, 1)
+  b.emptyIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93); b.emptyIcon:Hide()
+  b.dim = b.searchOverlay                              -- stock black overlay = our search dim
+  b.normal = b:GetNormalTexture()                      -- stock Quickslot2 = our slotNormal target
+  b.qborder = b.IconBorder
+  b.count = b.Count
+  b.secure = true
+end
+
+local function NewSecureCell(i, bagID)
+  local b = CreateFrame("ItemButton" , "KondoBagsItem" .. i, BagHolder(bagID), "ContainerFrameItemButtonTemplate")
+  DecorateSecure(b)
+  -- Our hover tracking for the cursor gap rides alongside Blizzard's tooltip handlers.
+  b:HookScript("OnEnter", function(self)
+    if self.cell and view.bag then view.hoverButton = self; view.bag:SetHover(self.cell) end
+  end)
+  b:HookScript("OnLeave", function(self) if view.hoverButton == self then view.hoverButton = nil; if view.bag then view.bag:SetHover(nil) end end end)
+  return b
+end
+
 local function NewCell(i)
   local b = CreateFrame("Button", "KondoBagsCell" .. i, frame.Grid)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -293,23 +345,27 @@ local function DressCell(b, cell, theme)
   b:SetSize(theme.cell.size, theme.cell.size)
   -- Item icon sits inside the slot border like the stock bags, not edge to edge.
   local ii = theme.cell.iconInset or 0
-  b.icon:ClearAllPoints()
-  b.icon:SetPoint("TOPLEFT", ii, -ii); b.icon:SetPoint("BOTTOMRIGHT", -ii, ii)
-  if theme.slotNormal then
-    b.normal:SetTexture(theme.slotNormal.file)
-    b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size)
-    b.normal:SetPoint("CENTER", 0, theme.slotNormal.offsetY or 0)
-    b.normal:SetVertexColor(1, 1, 1)
-    b.normal:Show()
-  else
-    b.normal:Hide()
+  if not b.secure then
+    b.icon:ClearAllPoints()
+    b.icon:SetPoint("TOPLEFT", ii, -ii); b.icon:SetPoint("BOTTOMRIGHT", -ii, ii)
+  end
+  if b.normal then
+    if theme.slotNormal then
+      b.normal:SetTexture(theme.slotNormal.file)
+      b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size)
+      b.normal:ClearAllPoints(); b.normal:SetPoint("CENTER", 0, theme.slotNormal.offsetY or 0)
+      b.normal:SetVertexColor(1, 1, 1)
+      b.normal:Show()
+    else
+      b.normal:Hide()
+    end
   end
   if theme.slotFlat then b.bg:SetColorTexture(unpack(theme.slotFlat)); b.bg:Show() else b.bg:Hide() end
   -- Restricted-bag cell: subtle tint per slot kind (KondoBagsDB.kindTint toggles it). With stock slot
   -- art the tint colours the rounded Quickslot border itself; the flat theme tints its 1px ring.
   local tint = cell.slotKind and theme.kindTint and theme.kindTint[cell.slotKind]
   if tint and KondoBagsDB and KondoBagsDB.kindTint == false then tint = nil end
-  if tint and theme.slotNormal then
+  if tint and theme.slotNormal and b.normal then
     local r, g, bl, a = unpack(tint)
     a = a or 1
     b.normal:SetVertexColor(1 - (1 - r) * a, 1 - (1 - g) * a, 1 - (1 - bl) * a)   -- blend toward the kind colour
@@ -321,8 +377,28 @@ local function DressCell(b, cell, theme)
     else e:Hide() end
   end
 
-  b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.dim:Hide(); b.emptyIcon:Hide()
   b:SetAlpha(1)
+  b.emptyIcon:Hide()
+  if b.secure then
+    -- LIVE slot on a secure button: bag/slot IDs drive Blizzard's handlers; the stock helpers draw it.
+    local ref = cell.ref
+    b:SetID(ref.slot)
+    local holder = BagHolder(ref.bagID)
+    if b:GetParent() ~= holder then b:SetParent(holder) end
+    local item = ref.item
+    SetItemButtonTexture(b, item and item.icon or nil)
+    SetItemButtonCount(b, item and item.count or 0)
+    SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
+    SetItemButtonDesaturated(b, item and item.locked or false)
+    if not item then
+      local g = cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind]
+      if g and KondoBagsDB and KondoBagsDB.ammoGlyph == "ammo" then g = theme.kindGlyph[cell.slotKind .. "Ammo"] or g end
+      g = g or theme.slotEmptyIcon
+      if g then SetGlyph(b, g) end
+    end
+    return
+  end
+  b.icon:Hide(); b.qborder:Hide(); b.count:Hide(); b.dim:Hide()
   if cell.kind == Layout.CELL_SLOT then
     local item = cell.ref and cell.ref.item
     if item then
@@ -331,7 +407,11 @@ local function DressCell(b, cell, theme)
       if (item.count or 1) > 1 then b.count:SetText(item.count); b.count:Show() end
       if view.bag:IsHeld(cell.ref) then b:SetAlpha(0.4) end   -- "picked up"
     elseif cell.slotKind and theme.kindGlyph and theme.kindGlyph[cell.slotKind] then
-      SetGlyph(b, theme.kindGlyph[cell.slotKind])
+      -- Ammo backdrops: KondoBagsDB.ammoGlyph "pouch" (Blizzard's slot art, default) or "ammo"
+      -- (projectile icons); themes carry both as <kind> and <kind>Ammo.
+      local g = theme.kindGlyph[cell.slotKind]
+      if KondoBagsDB and KondoBagsDB.ammoGlyph == "ammo" then g = theme.kindGlyph[cell.slotKind .. "Ammo"] or g end
+      SetGlyph(b, g)
     elseif theme.slotEmptyIcon then
       SetGlyph(b, theme.slotEmptyIcon)
     end
@@ -512,13 +592,29 @@ function Window.Render()
     frame.Money:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -f.padRight - 2, f.padBottom + 2)
   end
 
-  local ci = 0
+  -- Cell assignment. Live slots (view.bag.live) take SECURE buttons from their own pool; everything
+  -- else (lock, gap, mock slots) takes plain buttons. Secure buttons cannot be re-parented or shown/
+  -- hidden in combat: if a layout change arrives mid-combat, remember it and replay on PLAYER_REGEN_ENABLED.
+  local useSecure = view.bag.live == true
+  if useSecure and InCombatLockdown() then
+    view.renderDeferred = true
+    Window.ApplySearch(frame.Search:GetText())
+    return
+  end
+  local ci, si = 0, 0
   for r, row in ipairs(layout.rows) do
     local cellY = rowY[r]
     for _, cell in ipairs(row.cells) do
-      ci = ci + 1
-      local b = cells[ci]
-      if not b then b = NewCell(ci); cells[ci] = b end
+      local b
+      if useSecure and cell.kind == Layout.CELL_SLOT and cell.ref then
+        si = si + 1
+        b = secureCells[si]
+        if not b then b = NewSecureCell(si, cell.ref.bagID); secureCells[si] = b end
+      else
+        ci = ci + 1
+        b = cells[ci]
+        if not b then b = NewCell(ci); cells[ci] = b end
+      end
       DressCell(b, cell, theme)
       b:ClearAllPoints()
       b:SetPoint("TOPLEFT", frame.Grid, "TOPLEFT", (cell.col - 1) * theme.cell.pitchX, cellY)
@@ -526,6 +622,8 @@ function Window.Render()
     end
   end
   for i = ci + 1, #cells do cells[i]:Hide(); cells[i].cell = nil end
+  for i = si + 1, #secureCells do secureCells[i]:Hide(); secureCells[i].cell = nil end
+  view.renderDeferred = false
 
   Window.ApplySearch(frame.Search:GetText())
   Carry_Sync()
@@ -534,13 +632,17 @@ end
 
 function Window.ApplySearch(text)
   text = (text or ""):lower()
-  for _, b in ipairs(cells) do
-    if b:IsShown() and b.cell and b.cell.kind == Layout.CELL_SLOT and b.cell.ref and b.cell.ref.item then
-      local miss = text ~= "" and not b.cell.ref.item.name:lower():find(text, 1, true)
-      b.dim:SetShown(miss)
-      b.icon:SetDesaturated(miss)
+  local function apply(pool)
+    for _, b in ipairs(pool) do
+      if b:IsShown() and b.cell and b.cell.kind == Layout.CELL_SLOT and b.cell.ref and b.cell.ref.item then
+        local name = b.cell.ref.item.name
+        local miss = text ~= "" and (not name or not name:lower():find(text, 1, true))
+        if b.dim then b.dim:SetShown(miss) end
+        if b.secure then SetItemButtonDesaturated(b, miss or b.cell.ref.item.locked) else b.icon:SetDesaturated(miss) end
+      end
     end
   end
+  apply(cells); apply(secureCells)
 end
 
 -- ---------------------------------------------------------------------------
@@ -563,6 +665,14 @@ function Window.Attach(opts)
     view.bag:SetInsertMode(IsShiftKeyDown())
   end
   InstallWorldClickHook()
+  -- Combat: a layout change requested mid-combat is deferred by Render; replay it when combat ends.
+  if not view.regenFrame then
+    view.regenFrame = CreateFrame("Frame")
+    view.regenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    view.regenFrame:SetScript("OnEvent", function()
+      if view.renderDeferred and frame and frame:IsShown() then Window.Render() end
+    end)
+  end
   -- Shift toggles insert mode while carrying (see BagState). One event frame for the window.
   if not view.modFrame then
     view.modFrame = CreateFrame("Frame")
@@ -588,7 +698,10 @@ function Window.SetTheme(id)
   if wasShown then frame:Show() end
 end
 function Window.ThemeID() return view.themeID end
-function Window.SetMoney(copper) view.money = copper or 0; if frame and frame.Money then frame.Money:SetText(FormatMoney(view.money)) end end
+function Window.SetMoney(copper)
+  view.money = copper or 0
+  if frame and frame.Money then frame.Money:SetText(FormatMoney(view.money)) end
+end
 function Window.Frame() return frame end
 function Window.Show() CreateWindow(); Window.Render(); frame:Show() end
 function Window.Hide() if frame then frame:Hide() end; if view.bag then view.bag:ClearCursor() end end

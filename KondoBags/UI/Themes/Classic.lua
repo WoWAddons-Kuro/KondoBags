@@ -45,8 +45,11 @@ ns.Theme.Register({
   -- Restricted-bag slots (KondoBags_SlotKind): faded glyph behind EMPTY cells and a subtle border tint
   -- on every cell of that kind (tint is toggled by KondoBagsDB.kindTint).
   kindGlyph = {
-    quiver     = { file = "Interface\\Icons\\INV_Ammo_Arrow_02",       desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
-    ammo       = { file = "Interface\\Icons\\INV_Ammo_Bullet_01",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",       desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    ammo       = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    -- KondoBagsDB.ammoGlyph = "ammo": projectile icons instead of Blizzard's pouch slot art (default "pouch")
+    quiverAmmo = { file = "Interface\\Icons\\INV_Ammo_Arrow_02",       desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    ammoAmmo   = { file = "Interface\\Icons\\INV_Ammo_Bullet_01",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     soul       = { file = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     herb       = { file = "Interface\\Icons\\INV_Misc_Herb_01",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     enchanting = { file = "Interface\\Icons\\INV_Enchant_DustIllusion", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },

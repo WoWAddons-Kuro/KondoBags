@@ -125,6 +125,23 @@ local function CreateOptions()
   bt:Add(Check(bt, "kindTint", "Tint the border of quiver, herb, soul (and other special bag) slots",
     "Special bags are drawn as one row above your normal items. The tint says which kind each slot is: orange ammo, green herb, purple soul, blue enchanting, bronze mining, gold keyring, teal reagent.",
     function() ns.Window.Render() end), 26)
+  -- Ammo backdrops: radio pair over KondoBagsDB.ammoGlyph
+  local ammoRadios = {}
+  local function AmmoRadio(value, label)
+    local r = CreateFrame("CheckButton", nil, bt, "UIRadioButtonTemplate"); r:SetSize(16, 16)
+    r.text = r:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall"); r.text:SetPoint("LEFT", r, "RIGHT", 4, 0); r.text:SetText(label)
+    r:SetScript("OnClick", function()
+      KondoBagsDB.ammoGlyph = value
+      for _, o in ipairs(ammoRadios) do o:SetChecked(o.value == value) end
+      ns.Window.Render()
+    end)
+    r.value = value
+    r.Update = function(self) self:SetChecked((KondoBagsDB.ammoGlyph or "pouch") == value) end
+    ammoRadios[#ammoRadios + 1] = r
+    return bt:Add(r, 16, -6, 4)
+  end
+  AmmoRadio("pouch", "Empty quiver / ammo pouch slots show Blizzard's pouch art")
+  AmmoRadio("ammo", "Empty quiver / ammo pouch slots show an arrow / bullet icon")
   bt:Finish()
   local lastSection = bt
 

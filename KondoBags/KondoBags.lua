@@ -20,6 +20,7 @@ local function InitDB()
   KondoBagsDB.version = KondoBagsDB.version or DB_VERSION
   KondoBagsDB.theme = KondoBagsDB.theme or "classic"
   if KondoBagsDB.kindTint == nil then KondoBagsDB.kindTint = true end   -- border tint on restricted-bag cells
+  KondoBagsDB.ammoGlyph = KondoBagsDB.ammoGlyph or "pouch"               -- "pouch" (Blizzard slot art) | "ammo" (projectile icons)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
   -- Mock store: a fresh one keeps just the top slot (the mock's hearthstone) in the default Keep group.
@@ -71,7 +72,7 @@ local function EnsureLive()
   })
   KondoBagsCharDB.sections = liveBag.store        -- Reconcile may have replaced it
   liveBag:AddListener(function(event, b) if event == "changed" then KondoBagsCharDB.window.columns = b.columns end end)
-  liveBag.readOnly = true                          -- step 2: no gestures until the real cursor is wired (step 4)
+  liveBag.live = true                              -- secure cells; Blizzard owns slot gestures (D14). Pins: step 4
   return liveBag
 end
 
@@ -150,7 +151,8 @@ local function Slash(msg)
     local free = {}
     for k, n in pairs(summary.free) do free[#free + 1] = k .. "=" .. n end
     table.sort(free)
-    Print("version %s | source %s | provider %s | %d general + %d typed slots | free %s | %d group(s), boundary %d | theme %s | %d cols | edit mode: %s",
+    Print("version %s | source %s | provider %s | %d general + %d typed slots | free %s"
+      .. " | %d group(s), boundary %d | theme %s | %d cols | edit mode: %s",
       tostring(version), source or "-", ns.Client.Active().name, summary.general, summary.typed, table.concat(free, " "),
       #b.store.list, b.store.boundary, KondoBagsDB.theme, KondoBagsCharDB.window.columns or 10, ns.EditMode.Status())
   else
