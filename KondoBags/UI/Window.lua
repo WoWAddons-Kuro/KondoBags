@@ -142,9 +142,25 @@ local function CreateWindow(theme)
   frame.AddGroup = CreateFrame("Button", "KondoBagsAddGroupButton", frame)
   frame.AddGroup:SetSize(22, 22)
   frame.AddGroup:SetFrameLevel(frame:GetFrameLevel() + 10)
-  frame.AddGroup:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
-  frame.AddGroup:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
-  frame.AddGroup:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
+  if theme.frameTemplate then
+    -- Stock look: Blizzard's round gold "+" (matches the portrait frame's own buttons).
+    frame.AddGroup:SetNormalTexture("Interface\\Buttons\\UI-PlusButton-Up")
+    frame.AddGroup:SetPushedTexture("Interface\\Buttons\\UI-PlusButton-Down")
+    frame.AddGroup:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
+  else
+    -- Flat look: a text "+" glyph styled exactly like the flat close "x" above (same titleBar colours),
+    -- so the two title-row controls read as a pair.
+    local tb = theme.titleBar or {}
+    local cc = tb.closeColor or { 0.7, 0.7, 0.7 }
+    local hc = tb.closeHoverColor or { 1, 0.3, 0.3 }
+    local ac = tb.addHoverColor or { 0.4, 0.9, 0.4 }           -- green on hover: "add", not "close"
+    frame.AddGroup.glyph = frame.AddGroup:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
+    frame.AddGroup.glyph:SetPoint("CENTER", 0, 1)
+    frame.AddGroup.glyph:SetText("+")
+    frame.AddGroup.glyph:SetTextColor(unpack(cc))
+    frame.AddGroup:SetScript("OnEnter", function(self) self.glyph:SetTextColor(unpack(ac or hc)) end)
+    frame.AddGroup:SetScript("OnLeave", function(self) self.glyph:SetTextColor(unpack(cc)) end)
+  end
   frame.AddGroup:SetScript("OnClick", function()
     if view.bag then view.bag:AddGroup("") end
   end)
