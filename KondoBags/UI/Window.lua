@@ -242,8 +242,10 @@ local function DecorateSecure(b)
   b.edges[2]:SetPoint("BOTTOMLEFT", -1, -1); b.edges[2]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[2]:SetHeight(1)
   b.edges[3]:SetPoint("TOPLEFT", -1, 1);     b.edges[3]:SetPoint("BOTTOMLEFT", -1, -1);  b.edges[3]:SetWidth(1)
   b.edges[4]:SetPoint("TOPRIGHT", 1, 1);     b.edges[4]:SetPoint("BOTTOMRIGHT", 1, -1);  b.edges[4]:SetWidth(1)
-  -- ARTWORK sits above the template's NormalTexture (Quickslot2 art) and below Count/IconBorder.
-  b.emptyIcon = b:CreateTexture(nil, "ARTWORK", nil, -1)
+  -- The kind glyph (herb, ammo pouch, ...) for EMPTY typed cells. The template's own icon region and
+  -- NormalTexture live at BORDER/ARTWORK and were covering an ARTWORK(-1) glyph (regression after the
+  -- new-item glow change). OVERLAY(-1) draws above them and below Count / IconBorder / IconQuestTexture.
+  b.emptyIcon = b:CreateTexture(nil, "OVERLAY", nil, -1)
   b.emptyIcon:SetTexCoord(0.07, 0.93, 0.07, 0.93); b.emptyIcon:Hide()
   b.dim = b.searchOverlay                              -- stock black overlay = our search dim
   b.normal = b:GetNormalTexture()                      -- stock Quickslot2 = our slotNormal target

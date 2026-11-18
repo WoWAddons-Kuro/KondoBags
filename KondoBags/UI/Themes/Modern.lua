@@ -32,8 +32,8 @@ ns.Theme.Register({
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
   gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
   kindGlyph = {
-    quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag",       desaturate = true, alpha = 0.3, inset = 3 },
-    ammo       = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag",      desaturate = true, alpha = 0.3, inset = 3 },
+    quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",       desaturate = true, alpha = 0.3, inset = 3 },
+    ammo       = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",      desaturate = true, alpha = 0.3, inset = 3 },
     quiverAmmo = { file = "Interface\\Icons\\INV_Ammo_Arrow_02",       desaturate = true, alpha = 0.3, inset = 3 },
     ammoAmmo   = { file = "Interface\\Icons\\INV_Ammo_Bullet_01",      desaturate = true, alpha = 0.3, inset = 3 },
     soul       = { file = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02", desaturate = true, alpha = 0.3, inset = 3 },
