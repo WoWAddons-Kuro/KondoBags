@@ -1,6 +1,8 @@
 # KondoBags
 
-![KondoBags, classic theme: incoming grid above, a Keep row led by a lock cell below](Assets/KondoBags_Screenshot_Classic.jpg)
+| Classic theme | Modern theme |
+|---|---|
+| ![KondoBags, classic theme: the stock bag look, incoming grid above, a Keep row led by a lock cell below](Assets/KondoBags_Screenshot_Classic.jpg) | ![KondoBags, modern theme: flat dark panel, square cells, same grid and Keep row](Assets/KondoBags_Screenshot_Modern.jpg) |
 
 A bag addon for World of Warcraft that organizes your backpack the way a tidy person would, without you writing a single rule.
 
