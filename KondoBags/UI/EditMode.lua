@@ -23,8 +23,25 @@ local defaultPos = { point = "CENTER", x = 0, y = 0 }
 
 -- KondoBags_WindowPlacement = { point, x, y, columns }  (saved in KondoBagsCharDB.window)
 local function Placement()
-  KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
-  return KondoBagsCharDB.window
+  local p = KondoBagsCharDB.window
+  if not p then p = { columns = 10 }; KondoBagsCharDB.window = p end
+  -- Fresh install (no anchor chosen yet): open where the STOCK bags open, so the first look is familiar.
+  -- Stock anchors the first bag's BOTTOMRIGHT to UIParent's BOTTOMRIGHT at
+  --   x = -(right action bar width + 10)   (Forever; Era uses CONTAINER_OFFSET_X = -4 in place of +10)
+  --   y = CONTAINER_OFFSET_Y               (Forever 85, Era 70)
+  -- (_ref/blizzard/forever/ContainerFrame.lua:1320-1395, classic_era/ContainerFrame_Shared.lua:994-1041).
+  -- Read once; after that the saved anchor rules. `placed` marks that an anchor exists.
+  if not p.placed then
+    local barW = 0
+    if EditModeUtil and EditModeUtil.GetRightActionBarWidth then
+      local okW, w = pcall(EditModeUtil.GetRightActionBarWidth, EditModeUtil)
+      if okW and type(w) == "number" then barW = w end
+    end
+    local pad = (CONTAINER_OFFSET_X and CONTAINER_OFFSET_X < 0) and -CONTAINER_OFFSET_X or 10
+    p.point, p.x, p.y = "BOTTOMRIGHT", -(barW + pad), CONTAINER_OFFSET_Y or 85
+    p.placed = true
+  end
+  return p
 end
 
 function EditMode.IsActive() return editing end

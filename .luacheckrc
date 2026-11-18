@@ -33,6 +33,7 @@ read_globals = {
     "NUM_CONTAINER_FRAMES", "ContainerFrameContainer", "ContainerFrameCombinedBags", "ToggleBackpack_Combined",
     "ContainerFrame_AllowedToOpenBags", "IsOptionFrameOpen", "CanOpenPanels", "C_CVar", "debugstack",
     "TEXTURE_ITEM_QUEST_BANG", "TEXTURE_ITEM_QUEST_BORDER", "GetInventoryItemTexture", "GetItemFamily",
+    "EditModeUtil", "CONTAINER_OFFSET_X", "CONTAINER_OFFSET_Y",
     "ITEM_QUALITY_COLORS", "GameFontHighlight", "GameFontNormal", "GameFontHighlightSmall",
     "NumberFontNormal", "ChatFontNormal", "STANDARD_TEXT_FONT",
     "LibStub",

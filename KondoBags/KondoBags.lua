@@ -21,7 +21,7 @@ local function InitDB()
   KondoBagsDB.typedGlyph = KondoBagsDB.typedGlyph or "bag" -- empty typed-slot art: "bag" (equipped bag's icon) | "kind" (item-type art)
   KondoBagsDB.ammoGlyph = nil                                             -- pre-release key, retired
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
-  KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
+  KondoBagsCharDB.window = KondoBagsCharDB.window or { columns = 10 }   -- anchor chosen lazily by EditMode.Placement (stock bag spot on first run)
   KondoBagsCharDB.mockSections = nil                                      -- M0 mockup store, retired (SPECS/01 R5)
   -- Live store (KondoBagsCharDB.sections, SPECS/00 "Saved variables"): Reconcile validates it against
   -- the real bag on every scan; nil here means a fresh empty Keep at the top on first scan.
