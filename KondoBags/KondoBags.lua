@@ -17,7 +17,13 @@ local function InitDB()
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   -- Sections live per character (SPECS/00 D2). Mock sections are kept apart so play data is never
   -- polluted by the mockup.
-  KondoBagsCharDB.mockSections = KondoBagsCharDB.mockSections or ns.Sections.NewStore()
+  local store = KondoBagsCharDB.mockSections
+  -- A store saved by an earlier build has no sections (the default Keep section came later);
+  -- treat that like a fresh character.
+  if type(store) ~= "table" or type(store.list) ~= "table" or #store.list == 0 then
+    store = ns.Sections.NewStore()
+    KondoBagsCharDB.mockSections = store
+  end
   KondoBagsCharDB.window = KondoBagsCharDB.window or { point = "CENTER", x = 0, y = 0, columns = 10 }
 end
 
