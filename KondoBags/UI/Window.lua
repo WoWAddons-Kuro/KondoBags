@@ -348,6 +348,34 @@ local function EmptyGlyph(cell, theme)
   return g or theme.slotEmptyIcon
 end
 
+-- "Won't take the carried item" mark on a typed cell (owner, 2026-11-18): while an item is on the
+-- cursor, every typed slot whose bag family refuses it gets a circle-X (the loot-roll Pass glyph)
+-- over the cell. An OCCUPIED cell is also dimmed, since a swap onto it is refused just the same; an
+-- empty cell keeps its backdrop undimmed so the row does not turn to mud. The glyph is tinted a
+-- little red so it reads against the monochrome backdrop art. General slots take anything and are
+-- never marked.
+local NO_DROP_TEXTURE = "Interface\\Buttons\\UI-GroupLoot-Pass-Up"
+local function SetNoDrop(b, on, occupied, theme)
+  if on and not b.noDrop then
+    b.noDrop = b:CreateTexture(nil, "OVERLAY", nil, 6)         -- above icon / border / quest; below nothing of ours
+    b.noDrop:SetTexture(NO_DROP_TEXTURE)
+    b.noDrop:SetPoint("CENTER")
+  end
+  if not b.noDrop then return end
+  if on then
+    local nd = theme.noDrop or {}
+    local size = nd.size or 22
+    b.noDrop:SetSize(size, size)
+    b.noDrop:SetDesaturated(true)
+    b.noDrop:SetVertexColor(unpack(nd.color or { 1, 0.55, 0.55 }))
+    b.noDrop:SetAlpha(nd.alpha or 0.9)
+    b.noDrop:Show()
+    if occupied and b.dim then b.dim:Show() end
+  else
+    b.noDrop:Hide()
+  end
+end
+
 -- Quest item highlight on a secure cell (SPECS/01 "Quest item highlight"). Stock's rule verbatim:
 -- "!" when the item STARTS a quest not yet accepted (questID and not isActive), the yellow border
 -- when it is a quest item or belongs to an active quest, nothing otherwise. Era's stock bags hide
@@ -472,6 +500,9 @@ local function DressCell(b, cell, theme)
     if not item then
       SetGlyph(b, EmptyGlyph(cell, theme))
     end
+    -- Typed slot that would refuse the carried item: circle-X (and dim when occupied).
+    local refuses = cell.slotKind ~= nil and not view.bag:HeldFits(cell.slotKind)
+    SetNoDrop(b, refuses, item ~= nil, theme)
     return
   end
   ApplyNormalTint()
@@ -486,6 +517,8 @@ local function DressCell(b, cell, theme)
     else
       SetGlyph(b, EmptyGlyph(cell, theme))
     end
+    local refuses = cell.slotKind ~= nil and not view.bag:HeldFits(cell.slotKind)
+    SetNoDrop(b, refuses, item ~= nil, theme)
   elseif cell.kind == Layout.CELL_DROP and theme.dropGlyph then
     SetGlyph(b, theme.dropGlyph)
   elseif cell.kind == Layout.CELL_GAP then

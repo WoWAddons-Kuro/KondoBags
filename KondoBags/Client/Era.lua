@@ -37,6 +37,13 @@ function P.BagIcon(bag)
   return inv and GetInventoryItemTexture("player", inv) or nil
 end
 
+-- Bag-family bits of an item (which typed bags may hold it); 0 for ordinary items.
+function P.ItemFamily(itemIDOrLink)
+  if not itemIDOrLink then return 0 end
+  local fn = (C_Item and C_Item.GetItemFamily) or GetItemFamily
+  return fn and fn(itemIDOrLink) or 0
+end
+
 function P.SlotInfo(bag, slot)
   local info = C_Container.GetContainerItemInfo(bag, slot)
   if not info then return nil end

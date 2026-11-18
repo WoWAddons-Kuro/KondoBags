@@ -59,11 +59,20 @@ function BagState:Emit(event) for _, fn in ipairs(self.listeners) do fn(event, s
 -- cursor
 -- LIVE: the real cursor. The view calls this on CURSOR_CHANGED with the ref the cursor item came
 -- from (nil = empty cursor), or the string "external" for an item from outside the bag (bank, mail).
-function BagState:SetCursor(refOrExternal)
-  if self.held == refOrExternal then return end
+-- `heldFamily` = KondoBags_ItemFamilyBits of the carried item (C_Item.GetItemFamily; 0 = ordinary),
+-- so the view can mark typed slots that would refuse it (Client.ItemFitsKind).
+function BagState:SetCursor(refOrExternal, heldFamily)
+  if self.held == refOrExternal and self.heldFamily == heldFamily then return end
   self.held = refOrExternal
+  self.heldFamily = refOrExternal and (heldFamily or 0) or nil
   if not self.held then self.cursorGap = nil end
   self:Emit("cursor")
+end
+
+-- Would the carried item fit a slot of `kind`? Always true with nothing carried.
+function BagState:HeldFits(kind)
+  if not self.held then return true end
+  return ns.Client.ItemFitsKind(self.heldFamily, kind)
 end
 
 -- ---------------------------------------------------------------------------

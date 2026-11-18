@@ -297,6 +297,18 @@ test("Client.KindFromFamily: lowest set bit wins; 0/nil = general; unknown bits 
   eq(K(2048), "general", "item-only flag on a bag is not a kind")
 end)
 
+test("Client.ItemFitsKind: general takes all; a typed slot takes only items carrying its family bit", function()
+  local F = ns.Client.ItemFitsKind
+  ok(F(0, "general")); ok(F(nil, "general")); ok(F(1, nil))
+  ok(F(1, "quiver"), "arrows -> quiver"); ok(not F(1, "ammo"), "arrows -> pouch refused")
+  ok(F(2, "ammo"), "bullets -> pouch"); ok(F(32, "herb")); ok(F(4, "soul"))
+  ok(not F(0, "herb"), "ordinary item refused by herb bag"); ok(not F(nil, "herb"))
+  ok(F(32 + 1024, "mining"), "multi-family item fits either")
+  -- BagState view: nothing carried = everything fits
+  local bag = B.New({ store = S.NewStore(3), slots = Bag(3, {}), columns = 3 })
+  ok(bag:HeldFits("herb")); bag:SetCursor("external", 0); ok(not bag:HeldFits("herb")); ok(bag:HeldFits("general"))
+end)
+
 test("Scan.Refs over the Mock provider: general first (flat index = bag order), typed after, free counts", function()
   local refs = {
     { bagID = 0, slot = 1, kind = "general", item = Item(1) }, { bagID = 0, slot = 2, kind = "general" },

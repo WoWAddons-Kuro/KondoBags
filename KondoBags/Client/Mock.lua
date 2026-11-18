@@ -34,6 +34,7 @@ function Client.NewMock(refs)
     if not it then return nil end
     return { itemID = it.itemID, link = nil, icon = it.icon, count = it.count or 1, quality = it.quality or 1, locked = false, name = it.name }
   end
+  function P.ItemFamily(itemIDOrLink) return P.families and P.families[itemIDOrLink] or 0 end   -- tests set P.families
   function P.QuestInfo(bag, slot)
     local ref = byBag[bag] and byBag[bag].slots[slot]
     return ref and ref.item and ref.item.quest or nil

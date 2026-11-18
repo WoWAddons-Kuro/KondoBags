@@ -40,6 +40,20 @@ function Client.KindFromFamily(family)
   return "general"
 end
 
+-- Does an item with bag-family bits `itemFamily` (C_Item.GetItemFamily) fit a slot of `kind`?
+-- General slots take anything. A typed slot takes the item only if the item's family has that kind's
+-- bit set (a Quiver takes arrows, never thrown weapons or herbs). Unknown itemFamily (nil) = refused
+-- by typed slots, which is what a non-family item reports (0). Pure Lua (tests).
+function Client.ItemFitsKind(itemFamily, kind)
+  if not kind or kind == "general" then return true end
+  if kind == "reagent" then return (itemFamily or 0) ~= 0 or false end   -- reagent bag has no family bit; see note
+  local f = itemFamily or 0
+  for bit, k in pairs(Client.KIND_BY_BIT) do
+    if k == kind then return f % (bit * 2) >= bit end
+  end
+  return false
+end
+
 local providers = {}   -- name -> KondoBags_ClientProvider
 function Client.Register(p) providers[p.name] = p end
 

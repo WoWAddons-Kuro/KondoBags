@@ -83,10 +83,12 @@ local function RefForBagSlot(bagID, slot)
 end
 local function SyncCursor()
   if not liveBag then return end
-  local kind = GetCursorInfo()
+  local kind, itemID, itemLink = GetCursorInfo()
   if kind ~= "item" then liveBag:SetCursor(nil); return end
+  -- Family bits of the carried item: the view marks typed slots that would refuse it.
+  local family = ns.Client.Active().ItemFamily(itemLink or itemID)
   local ref = lastLocked and RefForBagSlot(lastLocked.bagID, lastLocked.slot)
-  if ref and ref.item and ref.item.locked then liveBag:SetCursor(ref) else liveBag:SetCursor("external") end
+  if ref and ref.item and ref.item.locked then liveBag:SetCursor(ref, family) else liveBag:SetCursor("external", family) end
 end
 local function OnItemLockChanged(bagID, slot)
   if not liveBag or not slot then return end
