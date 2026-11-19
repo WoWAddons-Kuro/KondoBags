@@ -750,6 +750,20 @@ end
 function Window.Render()
   if not frame or not view.bag then return end
   local theme, bag = Theme_(), view.bag
+  -- Combat gate FIRST. Live slots are SECURE buttons that cannot be re-parented, moved, shown or hidden
+  -- in combat, so a layout change mid-combat is remembered and replayed on PLAYER_REGEN_ENABLED. The
+  -- gate must sit before ANY geometry: an earlier version resized the frame and re-anchored the grid
+  -- and footer for the NEW layout, then bailed before moving the cells -- the window jumped and the
+  -- old cells sat in the new frame (owner, 2026-11-19, drop on a Keep lock in combat).
+  local useSecure = bag.live == true
+  if useSecure and InCombatLockdown() then
+    view.renderDeferred = true
+    -- The notice is about the PLAYER'S move, not about being in combat: only a drop made in combat
+    -- (BagState.movePending) shows it. A render deferred for any other reason stays silent.
+    frame.Pending:SetShown(bag.movePending == true)
+    Window.ApplySearch(frame.Search:GetText())
+    return
+  end
   ApplyBackdrop(frame, theme)
   if frame.Portrait and not theme.frameTemplate then frame.Portrait:SetShown(theme.portrait) end
   if frame.Title and not theme.frameTemplate then frame.Title:SetFontObject(theme.titleFont) end
@@ -828,15 +842,6 @@ function Window.Render()
   -- Cell assignment. Live slots (view.bag.live) take SECURE buttons from their own pool; everything
   -- else (lock, gap, mock slots) takes plain buttons. Secure buttons cannot be re-parented or shown/
   -- hidden in combat: if a layout change arrives mid-combat, remember it and replay on PLAYER_REGEN_ENABLED.
-  local useSecure = view.bag.live == true
-  if useSecure and InCombatLockdown() then
-    view.renderDeferred = true
-    -- The notice is about the PLAYER'S move, not about being in combat: only a drop made in combat
-    -- (BagState.movePending) shows it. A render deferred for any other reason stays silent.
-    frame.Pending:SetShown(view.bag.movePending == true)
-    Window.ApplySearch(frame.Search:GetText())
-    return
-  end
   local ci, si = 0, 0
   for r, row in ipairs(layout.rows) do
     local cellY = rowY[r]

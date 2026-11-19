@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: a drop made in combat resized and re-anchored the window before the deferred redraw, so the bag
+  jumped and the old cells sat in the new frame until combat ended. Geometry now waits with the cells.
 - Empty special-bag slots now show **item-type art** (herb, arrow, soul shard, leather, ...) by default; the equipped
   bag's own icon is still available in Settings > Bag types.
 - **Fix: profession bags in normal bag slots were drawn as general slots.** On Forever,
