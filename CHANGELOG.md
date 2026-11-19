@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Shift-insert.** Holding Shift while carrying an item shows a thin amber insert marker on the boundary
+  nearest the mouse inside a section; dropping there inserts the item at that spot. Nothing in the grid moves
+  and a Shift-drop never swaps. Works in combat (the redraw waits for combat to end). The old sliding
+  "cursor gap" phantom is gone. Incoming rows and the special-bag strip are not insert targets yet.
 - **Stack adoption** (Settings > Item utilities, "Create new stacks next to existing stacks", default on): loot that
   starts a new stack of an item you already keep in a section is drawn in that section right in front of the existing
   stack. The item is not moved; only where it is drawn changes.

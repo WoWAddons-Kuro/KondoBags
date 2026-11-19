@@ -12,7 +12,7 @@
 --     columns    = number,
 --     held       = KondoBags_SlotRef | nil,    -- the slot whose item is on the (mock) cursor
 --     hoverCell  = KondoBags_LayoutCell | nil,
---     insertMode = bool,                       -- Shift held while carrying
+--     movePending = bool | nil,               -- a drop happened in combat and is not drawn yet (view clears it)
 --     listeners  = { fn(event: KondoBags_BagStateEvent, self)... },
 --   }
 --   KondoBags_BagStateEvent = "changed" | "cursor"
@@ -47,7 +47,6 @@ function BagState.New(opts)
   self.columns = opts.columns or 10
   self.held = nil
   self.hoverCell = nil
-  self.insertMode = false
   self.listeners = {}
   return self
 end
@@ -65,7 +64,6 @@ function BagState:SetCursor(refOrExternal, heldFamily)
   if self.held == refOrExternal and self.heldFamily == heldFamily then return end
   self.held = refOrExternal
   self.heldFamily = refOrExternal and (heldFamily or 0) or nil
-  if not self.held then self.cursorGap = nil end
   self:Emit("cursor")
 end
 
@@ -83,47 +81,8 @@ function BagState:Section(sectionID) return Sections.Find(self.store, sectionID)
 function BagState:IsHeld(ref) return self.held ~= nil and self.held == ref end
 function BagState:HeldItem() return self.held and self.held.item or nil end
 
--- The Shift-drag CURSOR GAP (KondoBags_CursorGap): the phantom cell drawn UNDER THE MOUSE while an
--- item is carried with Shift down. Anchored to the kept item that was hovered (anchorRef) or to the
--- lock (anchorRef nil); Layout draws the gap in the anchor's column and slides the anchor one cell left.
--- THE RULE (owner, 2026-11-18): the gap opens where the mouse is and does NOT move again until the
--- mouse enters a cell naming a DIFFERENT anchor. Re-renders, the anchor sliding under the still
--- cursor, hovering the gap itself, OnLeave noise: none of that moves it.
-function BagState:CursorGap()
-  if not self.held or not self.insertMode then return nil end
-  -- A stored fact (set by UpdateCursorGap), never derived from the current hover on read.
-  -- the mouse enters a cell that names a DIFFERENT target. It is a stored fact (set by
-  -- UpdateCursorGap), never derived from the current hover on read.
-  return self.cursorGap
-end
-
--- What a hovered cell targets: the slot it shows (insert before it), or "end" over the lock.
--- nil for cells outside a section and for the phantom itself.
-local function AnchorForCell(c)
-  if not c or not c.sectionID then return nil end
-  if c.kind == Layout.CELL_SLOT and c.ref then return c.ref, c.ref.slotIndex end
-  if c.kind == Layout.CELL_DROP then return nil, "lock" end
-  return nil
-end
-
--- Move the phantom only if the hovered cell names a different target than the current point.
-local function UpdateCursorGap(self)
-  local c = self.hoverCell
-  local anchorRef, key = AnchorForCell(c)
-  if key == nil then return false end                               -- phantom / off-section: hold
-  local cur = self.cursorGap
-  if cur and cur.sectionID == c.sectionID and cur.key == key then return false end
-  self.cursorGap = { sectionID = c.sectionID, anchorRef = anchorRef, key = key }
-  return true
-end
-
-local function CloseCursorGap(self)
-  self.cursorGap = nil
-end
-
 function BagState:Layout(columns)
   local input = Sections.Partition(self.store, self.slots, columns or self.columns, self.typedSlots)
-  input.cursorGap = self:CursorGap()
   -- D14: an external cursor item with no free general slot cannot be pinned; hide the targets.
   if self.held == "external" then
     input.hideLocks = Sections.TopLeftHole(self.store, self:IsFreeFn()) == nil
@@ -155,7 +114,6 @@ function BagState:Pickup(ref)
   if not ref or not ref.item then return false end
   if self.readOnly then return false end          -- live bag before the real cursor is wired (Phase L step 4)
   self.held = ref
-  CloseCursorGap(self)
   self:Emit("cursor")
   return true
 end
@@ -163,7 +121,7 @@ end
 function BagState:ClearCursor()
   if not self.held then return false end
   self.held = nil
-  CloseCursorGap(self)
+
   self:Emit("cursor")
   return true
 end
@@ -171,17 +129,6 @@ end
 function BagState:SetHover(cell)
   if self.hoverCell == cell then return end
   self.hoverCell = cell
-  if self.held and self.insertMode and UpdateCursorGap(self) then self:Emit("cursor") end
-end
-
--- Same as SetHover but never emits: for the view's post-render re-sync, which must not trigger
-
-function BagState:SetInsertMode(on)
-  on = on and true or false
-  if self.insertMode == on then return end
-  self.insertMode = on
-  if on then UpdateCursorGap(self) else CloseCursorGap(self) end   -- open where the mouse already is
-  if self.held then self:Emit("cursor") end
 end
 
 -- LIVE: a store change must land WITH the one server op, not before -- otherwise the view draws the
@@ -208,9 +155,9 @@ local function LiveGesture(self, fn)
   local P = ns.Client and ns.Client.Active and ns.Client.Active()
   if P and P.InCombat and P.InCombat() then self.movePending = true end
   local function commit() self.store = copy end
-  if #ops == 0 then commit(); self.cursorGap = nil; self:Emit("changed"); return true end
+  if #ops == 0 then commit(); self:Emit("changed"); return true end
   self.moveQueue:Push(ops, commit)
-  self.cursorGap = nil; self:Emit("changed"); return true
+  self:Emit("changed"); return true
 end
 
 function BagState:IsFreeFn()
@@ -228,12 +175,11 @@ function BagState:Drop(cell)
     return out
   end
 
-  -- LIVE (D14 + D15): only lock / gap cells reach us; slot cells are Blizzard's.
+  -- LIVE (D14 + D15): only lock cells reach us here; slot cells are Blizzard's, Shift drops go to InsertAt.
   if self.live then
     local targetGroupID = cell.sectionID
-    if not targetGroupID or (cell.kind ~= Layout.CELL_DROP and cell.kind ~= Layout.CELL_GAP) then return false end
-    local anchorRef = cell.kind == Layout.CELL_GAP and cell.anchorRef or nil
-    local anchorSlot = anchorRef and anchorRef.slotIndex or nil
+    if not targetGroupID or cell.kind ~= Layout.CELL_DROP then return false end
+    local anchorSlot = nil                                  -- lock drop = append at the front (GapIndex nil)
     return LiveGesture(self, function(store)
       local group = Sections.Find(store, targetGroupID)
       if not group then return nil end
@@ -259,19 +205,15 @@ function BagState:Drop(cell)
   -- MOCK: the table IS the bag; gestures apply synchronously, then ReorderHoles like a scan would.
   local function done()
     Sections.ReorderHoles(self.store, isFree)
-    self.held = nil; CloseCursorGap(self); self:Emit("changed"); return true
+    self.held = nil; self:Emit("changed"); return true
   end
-  local function refuse() self.held = nil; CloseCursorGap(self); self:Emit("cursor"); return false end
+  local function refuse() self.held = nil; self:Emit("cursor"); return false end
   local heldTyped = held.kind ~= nil and held.kind ~= "general"
   local targetGroup = cell.sectionID and Sections.Find(self.store, cell.sectionID) or nil
-  local onGap = cell.kind == Layout.CELL_GAP
-  local anchorRef
-  if onGap then anchorRef = cell.anchorRef
-  elseif self.insertMode then local gap = self:CursorGap(); anchorRef = gap and gap.anchorRef or nil end
-  local anchorSlot = anchorRef and anchorRef.slotIndex or nil
+  local anchorSlot = nil                                    -- lock drop = front of the group
 
   if heldTyped then
-    if targetGroup and (cell.kind == Layout.CELL_DROP or onGap) then
+    if targetGroup and cell.kind == Layout.CELL_DROP then
       local ops, h = Sections.PinFromOutside(self.store, targetGroup, anchorSlot, isFree)
       if not ops then return refuse() end
       self.slots[h + 1].item, held.item = held.item, nil
@@ -285,7 +227,7 @@ function BagState:Drop(cell)
   if cell.typed then return refuse() end
 
   local heldKept = Sections.IsKept(self.store, held.slotIndex)
-  if targetGroup and (cell.kind == Layout.CELL_DROP or onGap or self.insertMode) then
+  if targetGroup and cell.kind == Layout.CELL_DROP then
     if heldKept then Sections.MoveToGap(self.store, targetGroup, held.slotIndex, anchorSlot)
     else Sections.Pin(self.store, targetGroup, held.slotIndex, anchorSlot, isFree) end
     return done()
@@ -303,6 +245,63 @@ function BagState:Drop(cell)
   -- new top-left position (Release).
   held.item, target.item = target.item, held.item
   if heldKept and held.item == nil then Sections.Release(self.store, held.slotIndex, isFree) end
+  return done()
+end
+
+-- Shift-insert (SPECS/00 "Shift-insert"): drop the held item at a KondoBags_InsertPoint from
+-- Layout.InsertPointAt. Nothing in the grid moved to produce the point; the store edit is the same
+-- Pin / MoveToGap / PinFromOutside as a lock drop with `anchor = point.afterRef` (the cell LEFT of the
+-- marker; nil = first in the group). Step 1: section runs only; anything else returns false.
+-- Returns true when the drop was consumed.
+function BagState:InsertAt(point)
+  local held = self.held
+  if not held or not point or point.run ~= "section" then return false end
+  local isFree = self:IsFreeFn()
+  local anchorSlot = point.afterRef and point.afterRef.slotIndex or nil
+  local heldIsRef = type(held) == "table"
+  -- Dropping the item on its own boundary (either side of itself) is a no-op; still one Pickup live
+  -- so the real cursor lets go.
+  local onSelf = heldIsRef and (point.afterRef == held or point.beforeRef == held)
+
+  if self.live then
+    return LiveGesture(self, function(store)
+      local group = Sections.Find(store, point.sectionID)
+      if not group then return nil end
+      if onSelf then return { { place = true, bagID = held.bagID, slot = held.slot } } end
+      local fromOutside = held == "external" or (held.kind ~= nil and held.kind ~= "general")
+      if fromOutside then
+        local ops = Sections.PinFromOutside(store, group, anchorSlot, isFree)
+        if not ops then return nil end                       -- no free general slot: Shift is inert (spec)
+        local out = {}
+        for i, o in ipairs(ops) do local r = self.slots[o.slotIndex + 1]; out[i] = { place = true, bagID = r.bagID, slot = r.slot } end
+        return out
+      end
+      if Sections.IsKept(store, held.slotIndex) then
+        Sections.MoveToGap(store, group, held.slotIndex, anchorSlot)
+      elseif not Sections.Pin(store, group, held.slotIndex, anchorSlot, isFree) then
+        return nil
+      end
+      return { { place = true, bagID = held.bagID, slot = held.slot } }
+    end)
+  end
+
+  -- MOCK
+  local group = Sections.Find(self.store, point.sectionID)
+  if not group then return false end
+  local function done() Sections.ReorderHoles(self.store, isFree); self.held = nil; self:Emit("changed"); return true end
+  if onSelf then return done() end
+  local heldTyped = held.kind ~= nil and held.kind ~= "general"
+  if heldTyped then
+    local ops, h = Sections.PinFromOutside(self.store, group, anchorSlot, isFree)
+    if not ops then self.held = nil; self:Emit("cursor"); return false end
+    self.slots[h + 1].item, held.item = held.item, nil
+    return done()
+  end
+  if Sections.IsKept(self.store, held.slotIndex) then
+    Sections.MoveToGap(self.store, group, held.slotIndex, anchorSlot)
+  else
+    Sections.Pin(self.store, group, held.slotIndex, anchorSlot, isFree)
+  end
   return done()
 end
 

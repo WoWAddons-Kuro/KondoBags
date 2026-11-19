@@ -664,9 +664,6 @@ local function DressCell(b, cell, theme)
       if b.normal and theme.slotNormal then b.normal:SetSize(theme.slotNormal.size, theme.slotNormal.size) end
       SetGlyph(b, theme.dropGlyph)
     end
-  elseif cell.kind == Layout.CELL_GAP then
-    -- Shift-drag cursor gap: the cell under the mouse where the carried item will land; brighter lock glyph
-    SetGlyph(b, theme.gapGlyph or theme.dropGlyph)
   end
 end
 
@@ -717,7 +714,7 @@ Cell_OnEnter = function(b)
   view.hoverButton = b
   bag:SetHover(cell)
   GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
-  if cell.kind == Layout.CELL_DROP or cell.kind == Layout.CELL_GAP then
+  if cell.kind == Layout.CELL_DROP then
     local s = bag:Section(cell.sectionID)
     local n = s and ns.Sections.ItemCount(s) or 0
     GameTooltip:SetText((s and s.name ~= "" and s.name) or "Section", 1, 1, 1)
@@ -774,6 +771,10 @@ function Window.Render()
     rowY[r] = y
     y = y - theme.cell.pitchY
   end
+  -- Published for Shift-insert: Layout.InsertPointAt reads the drawn layout + these metrics against the
+  -- cursor position in frame.Grid coordinates. Refreshed every render so the marker never goes stale.
+  view.gridLayout = layout
+  view.gridMetrics = { pitchX = theme.cell.pitchX, pitchY = theme.cell.pitchY, cellSize = theme.cell.size, rowY = rowY }
   local w, h = Theme.WindowSize(theme, bag.columns, rows)
   h = h + extraH
   -- Slim-lock gutter (Layout.slimGutter): a group whose items fill whole rows puts its lock half-width
@@ -889,6 +890,86 @@ function Window.ApplySearch(text)
   apply(cells); apply(secureCells)
 end
 
+-- ---------------------------------------------------------------------------
+-- Shift-insert (SPECS/00 "Shift-insert"): catcher + insert marker
+-- ---------------------------------------------------------------------------
+-- While Shift is held with an item on the cursor, a transparent catcher button covers frame.Grid so
+-- the drop reaches us instead of Blizzard's secure OnClick (which would swap). The catcher tracks the
+-- mouse, asks Layout.InsertPointAt where the item would land, and draws the insert marker there.
+-- Everything here is unprotected (plain Button + texture), so it works in combat too; only the
+-- REDRAW after the drop waits for PLAYER_REGEN_ENABLED (the footer notice covers that).
+local function InsertCatcher()
+  if frame.InsertCatcher then return frame.InsertCatcher end
+  local c = CreateFrame("Button", "KondoBagsInsertCatcher", frame.Grid)
+  c:SetAllPoints(frame.Grid)
+  c:SetFrameLevel(frame.Grid:GetFrameLevel() + 40)            -- above every cell (secure cells are +10)
+  c:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  c:EnableMouse(true)
+  c.marker = frame.Grid:CreateTexture(nil, "OVERLAY", nil, 7)
+  c.marker:Hide()
+  c.point = nil                                                -- the current KondoBags_InsertPoint
+  local function Track(self)
+    if not view.gridLayout or not view.gridMetrics then self.point = nil; self.marker:Hide(); return end
+    local scale = frame.Grid:GetEffectiveScale()
+    local cx, cy = GetCursorPosition()
+    local x = cx / scale - frame.Grid:GetLeft()
+    local y = cy / scale - frame.Grid:GetTop()                  -- <= 0 inside the grid
+    local p = Layout.InsertPointAt(view.gridLayout, view.gridMetrics, x, y)
+    -- Spec: only move the marker when the nearest boundary CHANGES.
+    local cur = self.point
+    if p and cur and p.sectionID == cur.sectionID and p.afterRef == cur.afterRef and p.beforeRef == cur.beforeRef then return end
+    self.point = p
+    if not p then self.marker:Hide(); return end
+    local th = Theme_()
+    local m = th.insertMarker or { width = 2, color = { 1, 0.82, 0.3, 0.9 }, overhang = 2 }
+    local rowTop = view.gridMetrics.rowY[p.markerRow]
+    self.marker:SetColorTexture(unpack(m.color))
+    self.marker:ClearAllPoints()
+    self.marker:SetSize(m.width, view.gridMetrics.cellSize + 2 * (m.overhang or 0))
+    self.marker:SetPoint("TOP", frame.Grid, "TOPLEFT", p.markerX, rowTop + (m.overhang or 0))
+    self.marker:Show()
+  end
+  c:SetScript("OnUpdate", Track)
+  c:SetScript("OnLeave", function(self) self.point = nil; self.marker:Hide() end)
+  local function Drop(self)
+    if not view.bag then return end
+    local p = self.point
+    if p and view.bag:InsertAt(p) then
+      self.point = nil; self.marker:Hide()
+    end
+    -- Not consumed (no point / Shift inert): the player keeps carrying the item; releasing Shift
+    -- hides the catcher and stock behaviour is back.
+  end
+  c:SetScript("OnClick", Drop)
+  c:SetScript("OnReceiveDrag", Drop)
+  c:Hide()
+  frame.InsertCatcher = c
+  return c
+end
+
+-- Catcher visibility = Shift held AND an item on the cursor AND the window shown. Called from the
+-- MODIFIER_STATE_CHANGED handler, from the bag's cursor event, and on Attach.
+function Window.UpdateInsertMode()
+  if not frame then return end
+  local c = InsertCatcher()
+  local on = IsShiftKeyDown() and CursorHasItem() and frame:IsShown()
+  if on then
+    if not c:IsShown() then c:Show() end
+  else
+    if c:IsShown() then c:Hide() end
+    c.point = nil; c.marker:Hide()
+  end
+end
+
+-- Debug (/kondo insert): the point under the mouse right now.
+function Window.DebugInsertPoint()
+  local c = frame and frame.InsertCatcher
+  local p = c and c.point
+  if not p then return "no insert point (catcher shown=" .. tostring(c and c:IsShown()) .. ")" end
+  local function slotOf(r) return r and tostring(r.slotIndex) or "nil" end
+  return string.format("section=%s after=%s before=%s row=%d x=%.1f", p.sectionID, slotOf(p.afterRef), slotOf(p.beforeRef), p.markerRow, p.markerX)
+end
+
 -- BAG_UPDATE_COOLDOWN: re-read every shown secure cell's cooldown in place (no re-dress, no
 -- re-parent; safe in combat -- the Cooldown child is not a protected frame).
 function Window.RefreshCooldowns()
@@ -947,7 +1028,9 @@ end
 -- ---------------------------------------------------------------------------
 local function OnBagEvent(event)
   if event == "cursor" then
-    -- only alpha + carry icon change; a full render is cheap enough in M0
+    -- Cursor filled / emptied: the Shift-insert catcher follows CursorHasItem(). Render for the
+    -- held-alpha / no-drop marks as before.
+    Window.UpdateInsertMode()
     Window.Render()
   else
     Window.Render()
@@ -959,7 +1042,7 @@ function Window.Attach(opts)
   if view.bag ~= opts.bag then
     view.bag = opts.bag
     view.bag:AddListener(OnBagEvent)
-    view.bag:SetInsertMode(IsShiftKeyDown())
+    Window.UpdateInsertMode()
   end
   -- Combat: a layout change requested mid-combat is deferred by Render; replay it when combat ends.
   if not view.regenFrame then
@@ -973,9 +1056,9 @@ function Window.Attach(opts)
   if not view.modFrame then
     view.modFrame = CreateFrame("Frame")
     view.modFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
-    view.modFrame:SetScript("OnEvent", function(_, _, key, down)
+    view.modFrame:SetScript("OnEvent", function(_, _, key)
       if key == "LSHIFT" or key == "RSHIFT" then
-        if view.bag then view.bag:SetInsertMode(down == 1 or down == true) end
+        Window.UpdateInsertMode()
       end
     end)
   end

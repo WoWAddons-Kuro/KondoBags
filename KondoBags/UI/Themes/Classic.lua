@@ -45,7 +45,8 @@ ns.Theme.Register({
   slimLockScale = 0.5,
   slimDropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.45, inset = 2 },
   slimLockBg = { 0, 0, 0, 0.35 },
-  gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.85, inset = 7 },  -- Shift-drag cursor gap
+  -- Shift-insert marker: a thin vertical bar on the boundary where the carried item will land.
+  insertMarker = { width = 2, color = { 1, 0.82, 0.3, 0.9 }, overhang = 2 },
   -- Restricted-bag slots (KondoBags_SlotKind): faded glyph behind EMPTY cells and a subtle border tint
   -- on every cell of that kind (tint is toggled by KondoBagsDB.kindTint).
   kindGlyph = {

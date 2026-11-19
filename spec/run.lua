@@ -82,17 +82,9 @@ test("layout: a section is one lock cell then its items, below incoming", functi
   eq(r.rows[2].cells[2].kind, L.CELL_SLOT); eq(r.rows[2].cells[2].col, 4)
 end)
 
-test("layout: empty group still shows its lock; the cursor gap opens in the ANCHOR's column (anchor slides left)", function()
+test("layout: an empty group still shows its lock cell", function()
   local r = L.Build({ columns = 4, loose = {}, sections = { { id = "s1", slots = {} } } })
   eq(#r.rows[1].cells, 1); eq(r.rows[1].cells[1].kind, L.CELL_DROP)
-  local a, b = { slotIndex = 8, item = Item(1) }, { slotIndex = 9, item = Item(2) }
-  local secs = { { id = "s1", slots = { a, b } } }
-  r = L.Build({ columns = 6, loose = {}, sections = secs, cursorGap = { sectionID = "s1", anchorRef = a } })
-  local kinds = {}
-  for _, c in ipairs(r.rows[1].cells) do kinds[#kinds + 1] = c.kind .. "@" .. c.col end
-  eq(table.concat(kinds, ","), "drop@3,slot@4,gap@5,slot@6")
-  r = L.Build({ columns = 6, loose = {}, sections = secs, cursorGap = { sectionID = "s1", anchorRef = nil } })
-  eq(r.rows[1].cells[2].kind, L.CELL_GAP, "nil anchor = right after the lock")
 end)
 
 test("layout: slim lock -- a group whose items fill whole rows keeps its lock in the gutter (col 0), no extra row", function()
@@ -238,43 +230,91 @@ test("kept onto kept: visual reorder only", function()
   eq(bag.slots[9].item.itemID, 108, "no physical move")
 end)
 
-test("Shift-drag: the cursor gap opens in the hovered item's column; dropping a LOOSE item lands there", function()
-  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 7 })
-  ok(bag:Pickup(bag.slots[3]))                  -- item 2
-  bag:SetInsertMode(true); bag:SetHover(Cell(bag, 7))
-  local gap
-  for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
-  ok(gap and gap.anchorRef and gap.anchorRef.slotIndex == 7, "gap anchored to item 7")
-  ok(bag:Drop(gap))
-  eq(Picture(bag), "5 4 3 1 0 | 6 7 2 8", "item 2 landed right after 7; zero moves")
-  bag:SetInsertMode(false)
+-- Shift-insert (SPECS/00 "Shift-insert"): Layout.InsertPointAt + BagState:InsertAt. Metrics mimic the
+-- view: 37px cells on a 41px pitch, rows stacked from y = 0 downward with no section gap.
+local function Metrics(layout)
+  local rowY = {}
+  for r = 1, #layout.rows do rowY[r] = -(r - 1) * 41 end
+  return { pitchX = 41, pitchY = 41, cellSize = 37, rowY = rowY }
+end
+local function PointAt(bag, x, y)
+  local layout = bag:Layout()
+  return L.InsertPointAt(layout, Metrics(layout), x, y), layout
+end
+-- x of the LEFT edge of column c (1-based) and of the gap boundary right after column c
+local function ColLeft(c) return (c - 1) * 41 end
+local function BoundaryAfter(c) return ColLeft(c) + 37 + 2 end
+
+test("InsertPointAt: nearest boundary on a section row -- before first / between / after last", function()
+  -- 6 columns, incoming 0..5 occupied -> row 1; Keep {6,7,8} -> row 2: lock@3 6@4 7@5 8@6
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local y = -41 - 18                                         -- middle of row 2
+  local p = PointAt(bag, ColLeft(4) - 1, y)                  -- just left of the first kept item
+  eq(p.run, "section"); eq(p.afterRef, nil); eq(p.beforeRef.slotIndex, 6, "before first")
+  p = PointAt(bag, BoundaryAfter(4), y)
+  eq(p.afterRef.slotIndex, 6); eq(p.beforeRef.slotIndex, 7, "between 6 and 7")
+  p = PointAt(bag, BoundaryAfter(6) + 30, y)                 -- past the right wall
+  eq(p.afterRef.slotIndex, 8); eq(p.beforeRef, nil, "after last")
+  -- an incoming row answers nil (Step 2 territory)
+  ok(PointAt(bag, ColLeft(2), -18) == nil, "incoming row: nil in Step 1")
+  -- outside every row band snaps to the nearest row
+  p = PointAt(bag, BoundaryAfter(4), -300)
+  eq(p.sectionID, bag.store.list[1].id); eq(p.markerRow, 2)
 end)
 
-test("Shift-drag over the RIGHTMOST kept item: gap opens at the right wall, item slides left, and holds", function()
-  local slots = Bag(22, { 0, 1, 2, 3, 4, 5, 18, 19, 20, 21 })
-  local st = KeepStore({ 18, 19, 20, 21 })
-  local bag = B.New({ store = st, slots = slots, columns = 10 })
-  local function keepRow()
-    for _, r in ipairs(bag:Layout().rows) do if r.sectionID then
-      local t = {}
-      for _, c in ipairs(r.cells) do
-        local label = c.kind == L.CELL_GAP and "GAP" or c.kind == L.CELL_DROP and "lock" or tostring(c.ref.slotIndex)
-        t[#t + 1] = label .. "@" .. c.col
-      end
-      return table.concat(t, " ")
-    end end
-  end
-  eq(keepRow(), "lock@6 18@7 19@8 20@9 21@10")
-  ok(bag:Pickup(bag.slots[3]))
-  bag:SetHover(Cell(bag, 21)); bag:SetInsertMode(true)
-  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10")
-  local gap; for _, r in ipairs(bag:Layout().rows) do for _, c in ipairs(r.cells) do if c.kind == L.CELL_GAP then gap = c end end end
-  bag:SetHover(nil); bag:SetHover(gap)
-  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "stable over the gap")
-  bag:SetHover(nil); bag:SetHover(Cell(bag, 21))
-  eq(keepRow(), "lock@5 18@6 19@7 20@8 21@9 GAP@10", "same anchor: holds")
-  ok(bag:Drop(gap))
-  eq(st.list[1].order[#st.list[1].order], 2, "pinned item (physical 2) is LAST, i.e. right of 21")
+test("InsertPointAt: multi-row group -- the row under the cursor supplies the neighbours; marker stays on it", function()
+  -- 4 columns, Keep holds 7 items -> lock + 7 = 8 cells = two full rows (lock row then items)
+  local bag = B.New({ store = KeepStore({ 2, 3, 4, 5, 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 4 })
+  local layout = bag:Layout()
+  local keepRows = {}
+  for r, row in ipairs(layout.rows) do if row.sectionID then keepRows[#keepRows + 1] = r end end
+  eq(#keepRows, 2)
+  local r1, r2 = keepRows[1], keepRows[2]
+  local last1 = layout.rows[r1].cells[#layout.rows[r1].cells].ref
+  local first2 = layout.rows[r2].cells[1].ref
+  -- right wall of the upper row: after its last item, before nothing (this row's view)
+  local p = PointAt(bag, BoundaryAfter(4) + 10, -(r1 - 1) * 41 - 18)
+  eq(p.markerRow, r1); eq(p.afterRef, last1); eq(p.beforeRef, nil)
+  -- left wall of the lower row: before its first item
+  p = PointAt(bag, ColLeft(1) - 5, -(r2 - 1) * 41 - 18)
+  eq(p.markerRow, r2); eq(p.afterRef, nil); eq(p.beforeRef, first2)
+end)
+
+test("InsertAt (mock): loose item lands at the marker; kept item re-orders; own boundary is a no-op", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  local y = -41 - 18
+  ok(bag:Pickup(bag.slots[3]))                               -- item 2 from incoming
+  local p = PointAt(bag, BoundaryAfter(4), y)                -- between 6 and 7
+  ok(bag:InsertAt(p))
+  eq(Picture(bag), "5 4 3 1 0 | 6 2 7 8", "2 inserted between 6 and 7; zero physical moves")
+  eq(bag.slots[3].item.itemID, 102)
+  -- kept 8 to the front
+  ok(bag:Pickup(bag.slots[9]))
+  p = PointAt(bag, ColLeft(3) - 1, y)                        -- row 2 is now lock@2 6@3 2@4 7@5 8@6 -> before first
+  ok(p.beforeRef and p.beforeRef.slotIndex == 6)
+  ok(bag:InsertAt(p))
+  eq(Picture(bag), "5 4 3 1 0 | 8 6 2 7")
+  -- own boundary: pick up 6 (now second), drop right after itself -> unchanged
+  ok(bag:Pickup(bag.slots[7]))
+  p = PointAt(bag, BoundaryAfter(3), y)                      -- lock@2 8@3 6@4 2@5 7@6: boundary after col 3 = between 8 and 6
+  ok(p.beforeRef == bag.slots[7] or p.afterRef == bag.slots[7])
+  ok(bag:InsertAt(p))
+  eq(Picture(bag), "5 4 3 1 0 | 8 6 2 7", "no-op on own boundary")
+end)
+
+test("InsertAt (live): ONE Pickup on the held item's own slot; store commits when it lands", function()
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = Bag(9, { 0, 1, 2, 3, 4, 5, 6, 7, 8 }), columns = 6 })
+  bag.live = true
+  local issued = {}
+  bag.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = s end },
+    function(i) return bag.slots[i + 1].bagID, bag.slots[i + 1].slot end)
+  bag:SetCursor(bag.slots[3])
+  local p = PointAt(bag, BoundaryAfter(5), -41 - 18)         -- between 7 and 8
+  ok(bag:InsertAt(p))
+  eq(#issued, 1); eq(issued[1], 3)
+  ok(not S.IsKept(bag.store, 2), "not committed yet")
+  bag.moveQueue:OnLockChanged(false)
+  eq(table.concat(bag.store.list[1].order, ","), "6,7,2,8")
 end)
 
 test("loose onto loose / empty: stock place; the vacated cell is a hole where it was; backing re-sorts", function()

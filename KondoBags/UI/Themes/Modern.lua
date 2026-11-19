@@ -32,7 +32,7 @@ ns.Theme.Register({
   dropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.35, inset = 7 },
   slimLockScale = 0.5,
   slimDropGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = true, alpha = 0.4, inset = 2 },
-  gapGlyph = { file = "Interface\\Icons\\INV_Misc_Key_03", desaturate = false, alpha = 0.8, inset = 7 },
+  insertMarker = { width = 2, color = { 1, 0.82, 0.3, 0.9 }, overhang = 2 },   -- Shift-insert boundary bar
   kindGlyph = {
     quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",       desaturate = true, alpha = 0.3, inset = 3 },
     ammo       = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",      desaturate = true, alpha = 0.3, inset = 3 },

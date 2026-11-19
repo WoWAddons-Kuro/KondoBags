@@ -9,26 +9,17 @@
 --     typed    = { KondoBags_SlotRef... },                                            -- restricted-bag slots, ONE run above incoming
 --     loose    = { KondoBags_SlotRef... },                                            -- incoming, bag order
 --     sections = { { id = KondoBags_SectionID, name, slots = { KondoBags_SlotRef... } }... },  -- display order
---     cursorGap = KondoBags_CursorGap | nil,   -- Shift-drag: the phantom cell that opens under the mouse
+--     hideLocks = bool | nil,                  -- D14: external cursor with no free general slot: no lock cells
 --   }
 --   KondoBags_SlotKind = "general" | "quiver" | "ammo" | "soul" | "herb" | "enchanting" | "mining" | "keyring" | "reagent"
---   KondoBags_CursorGap = { sectionID = KondoBags_SectionID, anchorRef = KondoBags_SlotRef | nil }
---     anchorRef = the kept item the gap is attached to; nil = attached to the lock cell.
---     RENDER RULE: the gap is drawn in the column the ANCHOR occupied and the anchor slides one cell
---     LEFT (toward the lock). Rows are right-aligned, so this is the only placement that puts the gap
---     exactly under a mouse that was hovering the anchor: the lock and everything up to and including
---     the anchor shift left; everything right of the anchor stays put. anchorRef nil = the gap is the
---     first cell after the lock.
 --   KondoBags_SlotRef = { bagID, slot, item = KondoBags_ItemView | nil }   -- item nil = empty slot
 --
 -- Output:
 --   KondoBags_LayoutResult = { rows = { KondoBags_LayoutRow... }, cellCount = number }
 --   KondoBags_LayoutRow    = { cells = { KondoBags_LayoutCell... }, sectionID = KondoBags_SectionID | nil }
---   KondoBags_LayoutCell   = { kind = KondoBags_CellKind, col = number, ref = KondoBags_SlotRef | nil, sectionID,
---                              anchorRef = KondoBags_SlotRef | nil }     -- gap cells only
---   KondoBags_CellKind     = "slot" | "drop" | "gap"
 --   KondoBags_LayoutCell   = { kind = KondoBags_CellKind, col = number, ref = KondoBags_SlotRef | nil, sectionID }
 --   KondoBags_CellKind     = "slot" | "drop"
+--   Shift-insert never adds cells: see Layout.InsertPointAt at the bottom of this file.
 --
 -- Rules (SPECS/00 "Bag window"):
 --   * the unsectioned remainder ("incoming") is drawn first, exactly like the stock bag;
@@ -42,7 +33,7 @@ ns = ns or {}
 local Layout = {}
 ns.Layout = Layout
 
-Layout.CELL_SLOT, Layout.CELL_DROP, Layout.CELL_GAP = "slot", "drop", "gap"   -- gap: the Shift-drag phantom under the mouse
+Layout.CELL_SLOT, Layout.CELL_DROP = "slot", "drop"
 Layout.MIN_COLUMNS = 2
 
 local function LayoutRun(cells, columns, sectionID)
@@ -102,23 +93,12 @@ function Layout.Build(input)
     -- widens the window by that gutter only while some row carries a slim lock (KondoBags_LayoutResult.slimGutter).
     local lock
     if not input.hideLocks then lock = { kind = Layout.CELL_DROP, sectionID = section.id }; cells[1] = lock end
-    -- Shift-drag: the cursor gap. See KondoBags_CursorGap RENDER RULE above: the gap takes the
-    -- anchor's column and the anchor slides left, which in reading order means the gap cell is
-    -- emitted immediately AFTER the anchor (or right after the lock when anchorRef is nil).
-    local gap = input.cursorGap
-    local gapHere = gap and gap.sectionID == section.id and not input.hideLocks
-    if gapHere and gap.anchorRef == nil then
-      cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = nil }
-    end
     for _, ref in ipairs(section.slots or {}) do
       cells[#cells + 1] = { kind = Layout.CELL_SLOT, ref = ref, sectionID = section.id }
-      if gapHere and gap.anchorRef == ref then
-        cells[#cells + 1] = { kind = Layout.CELL_GAP, sectionID = section.id, anchorRef = ref }
-      end
     end
     local rest = #cells - (lock and 1 or 0)
     if lock and rest > 0 and rest % columns == 0 then
-      table.remove(cells, 1)                               -- lay out items (+ gap) alone: they fill whole rows
+      table.remove(cells, 1)                               -- lay out the items alone: they fill whole rows
       local rows = LayoutRun(cells, columns, section.id)
       lock.col, lock.slim = 0, true
       table.insert(rows[1].cells, 1, lock)                 -- gutter cell on the group's top row
@@ -134,7 +114,73 @@ function Layout.Build(input)
 end
 
 function Layout.RowCount(input, columns)
-  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections, cursorGap = input.cursorGap }).rows
+  return #Layout.Build({ columns = columns, loose = input.loose, sections = input.sections }).rows
+end
+
+-- ---------------------------------------------------------------------------
+-- Shift-insert (SPECS/00 "Shift-insert"): where would a drop at grid point (x, y) go?
+-- ---------------------------------------------------------------------------
+--   Layout.InsertPointAt(layout, metrics, x, y) -> KondoBags_InsertPoint | nil
+--     layout  = KondoBags_LayoutResult (the one currently drawn)
+--     metrics = KondoBags_GridMetrics { pitchX, pitchY, cellSize, rowY = { [row] = topY (<= 0, grid coords) } }
+--     x, y    = cursor in frame.Grid coordinates: x from the grid's LEFT edge, y from its TOP (y <= 0)
+--   KondoBags_InsertPoint = {
+--     run       = "section",                      -- Step 1: only section rows answer; others return nil
+--     sectionID = KondoBags_SectionID,
+--     afterRef  = KondoBags_SlotRef | nil,        -- cell LEFT of the boundary; nil = before the group's first item
+--     beforeRef = KondoBags_SlotRef | nil,        -- cell RIGHT of the boundary; nil = after the group's last item
+--     markerRow = number, markerX = number,       -- the boundary, for the view's marker (grid coords)
+--   }
+-- Rule: the ROW under the cursor (nearest row when outside every row band) names the section. Within
+-- that row the candidate boundaries are the midpoints between consecutive SLOT cells plus the left
+-- edge of the first slot (right after the lock) and the right edge of the last; the one whose x is
+-- nearest the cursor wins. Nothing in the grid moves. Pure Lua; the view only draws the marker.
+function Layout.InsertPointAt(layout, metrics, x, y)
+  if not layout or not metrics or not metrics.rowY then return nil end
+  -- 1. the row: y is <= 0 going down; row r spans [rowY[r] - pitchY, rowY[r]]
+  local bestRow, bestDist
+  for r, top in ipairs(metrics.rowY) do
+    local bottom = top - metrics.pitchY
+    local d = (y > top) and (y - top) or (y < bottom) and (bottom - y) or 0
+    if not bestDist or d < bestDist then bestRow, bestDist = r, d end
+  end
+  local row = bestRow and layout.rows[bestRow]
+  if not row or not row.sectionID then return nil end           -- incoming / typed: Step 2 / inert
+  -- 2. slot cells of this row in column order; the lock (col 0 when slim) is not a candidate neighbour
+  local slots = {}
+  for _, c in ipairs(row.cells) do
+    if c.kind == Layout.CELL_SLOT and c.ref then slots[#slots + 1] = c end
+  end
+  local function cellLeft(c) return (c.col - 1) * metrics.pitchX end
+  local function cellRight(c) return cellLeft(c) + metrics.cellSize end
+  local half = (metrics.pitchX - metrics.cellSize) / 2
+  local candidates = {}
+  if #slots == 0 then
+    -- an empty group: the only boundary is right after its lock
+    local lock
+    for _, c in ipairs(row.cells) do if c.kind == Layout.CELL_DROP then lock = c end end
+    local bx = lock and (lock.slim and 0 or cellRight(lock) + half) or 0
+    candidates[1] = { x = bx, after = nil, before = nil }
+  else
+    candidates[#candidates + 1] = { x = cellLeft(slots[1]) - half, after = nil, before = slots[1].ref }
+    for i = 1, #slots - 1 do
+      candidates[#candidates + 1] = { x = cellRight(slots[i]) + half, after = slots[i].ref, before = slots[i + 1].ref }
+    end
+    candidates[#candidates + 1] = { x = cellRight(slots[#slots]) + half, after = slots[#slots].ref, before = nil }
+  end
+  -- 3. nearest boundary
+  local best
+  for _, cand in ipairs(candidates) do
+    local d = math.abs(cand.x - x)
+    if not best or d < best.d then best = { d = d, c = cand } end
+  end
+  -- Multi-row groups: the row's own first/last boundary is the same INDEX as the neighbouring row's
+  -- last/first, so afterRef/beforeRef taken from this row alone are correct; the marker stays on this row.
+  return {
+    run = "section", sectionID = row.sectionID,
+    afterRef = best.c.after, beforeRef = best.c.before,
+    markerRow = bestRow, markerX = best.c.x,
+  }
 end
 
 return Layout

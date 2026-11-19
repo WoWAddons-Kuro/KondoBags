@@ -242,6 +242,9 @@ local function Slash(msg)
     StaticPopup_Show("KONDOBAGS_RESET_ALL")
   elseif cmd == "options" or cmd == "config" or cmd == "settings" then
     ns.Options.Open()
+  elseif cmd == "insert" then
+    -- Debug: the Shift-insert point under the mouse (hold Shift with an item on the cursor).
+    Print("insert: %s", ns.Window.DebugInsertPoint and ns.Window.DebugInsertPoint() or "n/a")
   elseif cmd == "cd" then
     -- Debug: what GetContainerItemCooldown says for every occupied slot (why no sweep?).
     local P = ns.Client.Active()
