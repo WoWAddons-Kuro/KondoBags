@@ -317,6 +317,7 @@ The intended complete list:
 | Bag-type border tint | on / off | on | Settings panel (`/kondo tint` for now) |
 | Lock position | locked / movable | movable | Settings panel **and** the Edit Mode dialog for the window (`KondoBagsCharDB.window.locked`). Movable = the window drags by its frame at any time, as most addons do; locked = only in Edit Mode. |
 | Window position, scale and column count | — | — | **Edit Mode**: drag the frame; drag its corner grip to set columns (width snaps to whole cells, height follows). Not a setting of ours. |
+| Always compare items | on / off | off | Settings panel, "Item utilities". Not ours either: reads/writes Blizzard's `alwaysCompareItems` CVar directly (no `KondoBagsDB` key), so the box tracks the stock setting. |
 
 Pins are managed in the window itself. Anything proposed beyond this list needs a reason it cannot be a fixed behaviour.
 

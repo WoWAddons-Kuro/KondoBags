@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Settings: "Item utilities" section with an "Always compare items in tooltips" checkbox (Blizzard's `alwaysCompareItems` CVar, default off).
 - Mousing over a "new" item clears its green glow at once (stock mainline does this too; stock Era does not).
   The glow's 1-second pulse is Blizzard's template animation, unchanged.
 - App icon on the Settings panel (`Media\KondoBags_Icon.tga`).

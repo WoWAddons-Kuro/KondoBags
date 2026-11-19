@@ -166,6 +166,21 @@ local function CreateOptions()
   end
   bt:Finish()
 
+  -- Section: Item utilities. These are Blizzard CVars, not KondoBagsDB keys: the checkbox reads and
+  -- writes the live CVar, so it also reflects changes made elsewhere (stock Settings, other addons).
+  local iu = Section("Item utilities")
+  local function CVarCheck(parent, cvar, label, tip)
+    local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+    cb.Text:SetText(label)
+    cb.tooltipText = tip
+    cb:SetScript("OnClick", function(self) SetCVar(cvar, self:GetChecked() and "1" or "0") end)
+    cb.Update = function(self) self:SetChecked(GetCVarBool and GetCVarBool(cvar) or GetCVar(cvar) == "1") end
+    return cb
+  end
+  iu:Add(CVarCheck(iu, "alwaysCompareItems", "Always compare items in tooltips",
+    "Show the equipped item's tooltip next to a bag item's without holding Shift (Blizzard's alwaysCompareItems CVar; default off)."), 26)
+  iu:Finish()
+
   -- Section: Reset
   local rs = Section("Reset")
   local resetAll = CreateFrame("Button", nil, rs, "UIPanelButtonTemplate")
