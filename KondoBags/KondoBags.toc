@@ -11,7 +11,7 @@
 ## SavedVariables: KondoBagsDB
 ## SavedVariablesPerCharacter: KondoBagsCharDB
 ## OptionalDeps: LibStub, LibEditMode
-## IconTexture: Interface\Icons\INV_Misc_Bag_08
+## IconTexture: Interface\AddOns\KondoBags\Media\KondoBags_Icon.tga
 ## X-Website: https://github.com/WoWAddons-Kuro/KondoBags
 
 Libs\LibStub\LibStub.lua

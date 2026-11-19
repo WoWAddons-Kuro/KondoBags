@@ -41,9 +41,15 @@ local function CreateOptions()
   sub:SetText("The stock bag plus Keep rows. Drop an item on a lock cell to keep it there. Position, scale and column count are set in Edit Mode; pins are managed in the window itself.")
 
   -- Layout grid: every widget hangs off `last` at a fixed left column; sections are bordered
-  -- boxes with a header.
+  -- boxes with a header. The chain starts from a header spacer that spans the whole icon + blurb
+  -- block at the LEFT margin: sections line up under the icon rather than inheriting the blurb's
+  -- indent. Title + two-line blurb (~56px) is taller than the 48px icon, so the spacer's bottom
+  -- follows the blurb.
   local BOX_W, PAD = 580, 10
-  local last, lastDy = sub, -14
+  local header = CreateFrame("Frame", nil, content)
+  header:SetPoint("TOPLEFT", logo, "TOPLEFT")
+  header:SetPoint("BOTTOMRIGHT", sub, "BOTTOMRIGHT")
+  local last, lastDy = header, -14
   local function Place(w, dy, dx) w:SetPoint("TOPLEFT", last, "BOTTOMLEFT", dx or 0, dy or lastDy); last = w; lastDy = -6 end
 
   -- Checkbox bound to KondoBagsDB[key]; onChange runs after the write.
