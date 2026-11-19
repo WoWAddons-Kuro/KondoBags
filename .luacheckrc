@@ -23,7 +23,7 @@ read_globals = {
     "GetCursorInfo", "CursorHasItem", "ClearCursor", "GetCursorPosition", "SetCursor", "ResetCursor",
     "PlaySound", "SOUNDKIT", "StaticPopupDialogs", "StaticPopup_Show", "ACCEPT", "CANCEL", "YES", "NO",
     "C_Container", "C_Item", "C_AddOns", "C_NewItems", "C_QuestLog", "GetQuestLogTitle", "GetMoney", "InterfaceOptionsFrame_OpenToCategory", "GetAddOnMetadata", "IsAddOnLoaded", "Enum",
-    "SetItemButtonTexture", "SetItemButtonCount", "SetItemButtonQuality", "SetItemButtonDesaturated", "SetItemButtonNormalTextureVertexColor",
+    "SetItemButtonTexture", "SetItemButtonCount", "CooldownFrame_Set", "C_TooltipInfo", "ITEM_SPELL_CHARGES", "SetItemButtonQuality", "SetItemButtonDesaturated", "SetItemButtonNormalTextureVertexColor",
     "NineSliceUtil", "NineSliceLayouts",
     "BackdropTemplateMixin", "Settings", "InterfaceOptions_AddCategory", "MenuUtil",
     "WOW_PROJECT_ID", "WOW_PROJECT_MAINLINE", "WOW_PROJECT_CLASSIC", "WOW_PROJECT_CAMELOT",

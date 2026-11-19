@@ -57,6 +57,57 @@ function Client.ItemFitsKind(itemFamily, kind)
   return false
 end
 
+-- Charges left on a charge-based item (Bag of Marbles "10 Charges"); nil when the item has none.
+-- ContainerItemInfo has no field for it (stackCount is the STACK), so the tooltip is read:
+-- C_TooltipInfo.GetBagItem where it exists (Forever), else a hidden GameTooltip (Era). Cached per
+-- bag:slot:link. A used charge keeps the same link, so the owner calls InvalidateTooltipCharges(bag)
+-- on BAG_UPDATE(bag) and the next scan re-reads that bag's slots. Same code on every client.
+local chargePattern   -- built lazily: ITEM_SPELL_CHARGES is a global set by the client at load
+local function ChargePattern()
+  if not chargePattern then
+    -- The global is "%d Charges" (Era) or "%d |4Charge:Charges;" (plural token, Forever). Keep the
+    -- LITERAL words: "|4Charge:Charges;" -> "Charges?", "%d" -> "(%d+)", anchored to the whole line.
+    -- An earlier "%a+" version matched ANY "number word" line and read "Durability 40" / "8 - 13
+    -- Damage" as charges (owner screenshot, 2026-11-19).
+    local src = ITEM_SPELL_CHARGES or "%d Charges"
+    src = src:gsub("|4([^:;]*):([^;]*);", function(singular, plural)
+      return plural:sub(1, #singular) == singular and (singular .. plural:sub(#singular + 1) .. "?") or ("(" .. singular .. "|" .. plural .. ")")
+    end)
+    chargePattern = "^" .. src:gsub("%%d", "(%%d+)") .. "$"
+  end
+  return chargePattern
+end
+local chargeCache = {}        -- "bag:slot:link" -> charges | false (scanned, item has none)
+local scanTip
+function Client.TooltipCharges(bag, slot, link)
+  if not link then return nil end
+  local key = bag .. ":" .. slot .. ":" .. link
+  local cached = chargeCache[key]
+  if cached ~= nil then return cached or nil end
+  local pattern, n = ChargePattern(), nil
+  if C_TooltipInfo and C_TooltipInfo.GetBagItem then
+    local data = C_TooltipInfo.GetBagItem(bag, slot)
+    for _, line in ipairs(data and data.lines or {}) do
+      local m = line.leftText and line.leftText:match(pattern)
+      if m then n = tonumber(m); break end
+    end
+  elseif CreateFrame then
+    scanTip = scanTip or CreateFrame("GameTooltip", "KondoBagsScanTooltip", nil, "GameTooltipTemplate")
+    scanTip:SetOwner(UIParent, "ANCHOR_NONE"); scanTip:ClearLines(); scanTip:SetBagItem(bag, slot)
+    for i = 1, scanTip:NumLines() do
+      local fs = _G["KondoBagsScanTooltipTextLeft" .. i]
+      local m = fs and fs:GetText() and fs:GetText():match(pattern)
+      if m then n = tonumber(m); break end
+    end
+  end
+  chargeCache[key] = n or false
+  return n
+end
+function Client.InvalidateTooltipCharges(bag)
+  local prefix = bag .. ":"
+  for k in pairs(chargeCache) do if k:sub(1, #prefix) == prefix then chargeCache[k] = nil end end
+end
+
 local providers = {}   -- name -> KondoBags_ClientProvider
 function Client.Register(p) providers[p.name] = p end
 

@@ -203,6 +203,10 @@ local function LiveGesture(self, fn)
   local copy = CopyStore(self.store)
   local ops = fn(copy)
   if ops == nil then return false end
+  -- A drop made in combat cannot be drawn until combat ends (secure cells are locked). Flag it so
+  -- the view can say so; the view clears movePending when it finally renders.
+  local P = ns.Client and ns.Client.Active and ns.Client.Active()
+  if P and P.InCombat and P.InCombat() then self.movePending = true end
   local function commit() self.store = copy end
   if #ops == 0 then commit(); self.cursorGap = nil; self:Emit("changed"); return true end
   self.moveQueue:Push(ops, commit)

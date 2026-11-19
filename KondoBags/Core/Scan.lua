@@ -16,12 +16,12 @@ ns = ns or {}
 local Scan = {}
 ns.Scan = Scan
 
-local function ItemView(raw, quest)
+local function ItemView(raw, quest, charges)
   if not raw then return nil end
   return {
     itemID = raw.itemID, link = raw.link, name = raw.name, icon = raw.icon,
     count = raw.count or 1, quality = raw.quality or 1, locked = raw.locked or false,
-    quest = quest,
+    quest = quest, charges = charges,          -- KondoBags_ChargeCount | nil: charges left on a charge item
   }
 end
 
@@ -41,7 +41,8 @@ function Scan.Refs(provider)
       local raw = provider.SlotInfo(bag, slot)
       if raw or not occupiedOnly then
         local quest = (raw and provider.QuestInfo) and provider.QuestInfo(bag, slot) or nil
-        local ref = { bagID = bag, slot = slot, kind = kind, bagIcon = bagIcon, item = ItemView(raw, quest) }
+        local charges = (raw and provider.Charges) and provider.Charges(bag, slot, raw.link) or nil
+        local ref = { bagID = bag, slot = slot, kind = kind, bagIcon = bagIcon, item = ItemView(raw, quest, charges) }
         into[#into + 1] = ref
         if not ref.item then summary.free[kind] = (summary.free[kind] or 0) + 1 end
       end

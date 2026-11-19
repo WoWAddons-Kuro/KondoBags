@@ -251,7 +251,7 @@ One window replaces the default bag frames. It hooks the standard open/close/tog
     incoming and reappears right of the lock)                       are indistinguishable so nothing visibly jumped)
 ```
 
-Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`): the cell drawn under the mouse while an item is carried with Shift down, anchored to the kept item that was hovered (`anchorRef`; nil = the lock). The gap takes the anchor's column and the anchor slides one cell left, which on a right-aligned row is exactly what puts the gap under a mouse that was over the anchor. It opens where the mouse is and does not move until the mouse enters a cell naming a different anchor.
+Terminology: while an item is carried with Shift down the window is in **insert mode** (see "Shift-insert" below). Nothing in the grid moves; a vertical **insert marker** shows where the item will land. The earlier "cursor gap" phantom (a cell that opened under the mouse and slid its neighbours) is retired -- it swapped when it should have inserted and its placement rules were a source of glitches (owner, 2026-11-19).
 
 | Gesture | Server operations (`PickupContainerItem`; the mock swaps its table) | Visual result |
 |---|---|---|
@@ -260,7 +260,7 @@ Terminology: the Shift-drag phantom is the **cursor gap** (`KondoBags_CursorGap`
 | Drop loose `l` (physical `s_l`, on the cursor) on a **lock** or **gap** | ONE `Pickup(s_l)`: puts the item back in its own slot (the cursor must be empty for the map to be truth). `kept[s_l] = group`; `order` gains `s_l` at the gap | `l` appears right of the lock (or at the gap); its incoming cell vanishes and the occupied cells close ranks? **No** -- occupied cells never move: the cell `l` left is now a FREE cell and joins the pool at the top-left end. |
 | Drop **EXTERNAL** or **TYPED** item (not in the general list) on a lock or gap | needs a free general slot: `h` = lowest free physical slot; ONE `Pickup(h)` places the cursor item; `kept[h] = group` | item lands in the group. **No free slot → the lock and gap cells are hidden** while that cursor is held (`Layout` input `hideLocks`). (D14) |
 | Drop kept `k` on kept `j` | none | reorder: `k` takes `j`'s position in `order` (any group) |
-| **Shift** while carrying over a section | none until drop; drop = pin/reorder as above, at the phantom's index | phantom insert cell opens under the mouse; gap closes when Shift is released |
+| **Shift** while carrying (insert mode) | drop = pin / reorder as above at the **insert index** under the marker; a Shift-drop on an **item cell** is intercepted by us and is NEVER a stock swap | vertical insert marker between the two cells nearest the mouse; grid does not move |
 | Loose on loose / empty | stock swap/place | stock |
 | Hover the lock cell | — | tooltip: section name, count, "drop an item here to keep it" |
 | *(later)* right-click the lock cell | — | rename, dissolve, new section |
@@ -284,6 +284,56 @@ Consequences: (a) a drop **may need a free slot only when the gesture is itself 
 **Secure item buttons.** Right-click-to-use must work in combat, so every item cell is the client's own container item button template (`ContainerFrameItemButtonTemplate`), with the bag ID on its parent frame (`SetID(bag)`) and the slot ID on the button (`SetID(slot)`). These cannot be created or re-parented during combat. The window keeps a pool sized to total slot count, built out of combat, and any layout change requested in combat is deferred to `PLAYER_REGEN_ENABLED`. Content updates that do not re-parent (icon, count, dimming) may still run in combat.
 
 **Pinning by direct manipulation.** Drop on a group's lock cell (or on the Shift-drag cursor gap) pins; drop on an incoming cell unpins. Later: modifier-click shortcut.
+
+### Shift-insert (replaces the cursor gap)
+
+**One rule, everywhere.** While an item is on the cursor and Shift is held the window is in **insert mode**: the grid does not move, and a vertical **insert marker** (`KondoBags_InsertMarker`) shows the one boundary where the item will land. Dropping there **migrates a free slot to that boundary and fills it** -- never a stock swap. Release Shift (or empty the cursor) → marker gone, stock behaviour back. Works identically over a section row, the incoming grid and the typed strip; the only thing that differs per run is **where the free slot comes from** (table below).
+
+**When there is no free slot to migrate**, Shift does nothing: no marker, no catcher, the drop is a stock swap/place exactly as without Shift. (Owner, 2026-11-19: 'pretend shift is not held'.)
+
+**Why.** The cursor-gap phantom (a) slid cells under the mouse so the target moved while aiming, and (b) a Shift-drop landing on an *item* cell never reached us -- Blizzard's secure `OnClick` swapped. Both vanish when nothing moves and we own the click.
+
+**Owning the click.** Secure buttons cannot be re-scripted, so insert mode raises one **transparent catch frame** (`KondoBags_InsertCatcher`: a plain Button sized to `frame.Grid`, frame level above every cell) that takes the click. It is shown only while `IsShiftKeyDown() and CursorHasItem()` **and a free slot exists for the run under the cursor** (recomputed on mouse move). **Combat does not disable it**: the catcher is a plain Button and the marker a texture, neither is protected, and `PickupContainerItem` plus the store edit are already allowed in combat (`LiveGesture`). What combat blocks is only the REDRAW of the secure cells, so a Shift-drop in combat lands, sets `BagState.movePending`, and the footer's `Move pending, will apply out of combat...` notice shows until `PLAYER_REGEN_ENABLED` replays the render. The catcher frame itself is created with the window (pre-build, SPECS/01 R6), never on demand. `OnUpdate` tracks the cursor → `InsertPointAt` → marker; `OnClick`/`OnReceiveDrag` performs the insert; `OnLeave` hides the marker.
+
+**Insert point (`KondoBags_InsertPoint`).** Pure Lua in `Core/Layout.lua`, computed on every mouse move from cursor position against the current layout:
+
+```lua
+-- Layout.InsertPointAt(layout, metrics, gridX, gridY) -> KondoBags_InsertPoint | nil
+--   metrics = { pitchX, pitchY, cellSize, rowY = { [row] = topY }, gridW }   -- passed in, keeps Layout pure
+--   KondoBags_InsertPoint = {
+--     run        = "section" | "incoming" | "typed",
+--     sectionID  = KondoBags_SectionID | nil,          -- section runs only
+--     slotKind   = KondoBags_SlotKind | nil,           -- typed runs only (the kind of the hovered strip)
+--     beforeRef  = KondoBags_SlotRef | nil,            -- the cell RIGHT of the boundary; nil = after the last cell
+--     afterRef   = KondoBags_SlotRef | nil,            -- the cell LEFT of the boundary; nil = before the first cell
+--     markerRow, markerX                               -- grid coords for the marker
+--   }
+```
+
+1. **Row** under the cursor by `rowY` bands (outside every row → nearest row). The row names the run and, for sections, the `sectionID`; for typed rows the `slotKind` of the strip.
+2. **Nearest boundary** in that row: each slot cell has a centre `cx`; candidate boundaries are the midpoints between consecutive cells plus the left edge of the first cell (after the lock on a section row) and the right edge of the last. Pick the boundary whose x is closest to the cursor. `afterRef` / `beforeRef` are the cells either side (nil at the ends).
+3. Multi-row runs: "after the last cell of row r" and "before the first cell of row r+1" are the same index; the marker is drawn on the row the cursor is on.
+4. The marker moves only when the nearest boundary **changes** (no distance threshold; the nearest is always defined).
+
+**Where the free slot comes from, and what the drop does** (`BagState:InsertAt(point)`; one server op maximum, as D13/D15 require):
+
+| Run under cursor | Free slot needed | Store edit | Server op | No free slot → |
+|---|---|---|---|---|
+| **section** | one general slot the item can land in: the held item's OWN slot if it is general (nothing moves), else the lowest free general slot (`TopLeftHole`) | `Sections.Pin` / `MoveToGap` / `PinFromOutside` with `anchor = afterRef.slotIndex` (nil = first) — the existing `GapIndex` convention | ONE `Pickup` (held item's own slot, or the hole) | Shift inert |
+| **incoming** | a free general slot. Incoming is the FREE POOL drawn in physical order, so the marker boundary names a physical neighbour: `afterRef` (or `beforeRef`). The lowest free general slot is **re-ordered in the map** to sit at that boundary (`Sections.MoveFreeToBoundary(store, afterSlot, beforeSlot, isFree)`: a map edit — holes are interchangeable, D15), then the item is placed into it | map edit + ONE `Pickup(hole)` | Shift inert |
+| **typed** (quiver/herb/...) | -- | **Shift is inert on the typed strip**: no marker, no catcher, stock behaviour. (Owner, 2026-11-19: revisit only if it feels odd in play.) | -- | -- |
+
+Dropping the held item on its **own** current position is a no-op (one `Pickup` releases the cursor).
+
+**Marker.** One texture on `frame.Grid` (OVERLAY), themed: `theme.insertMarker = { width = 2, color = {1, 0.82, 0.3, 0.9}, overhang = 2 }`: full cell height + overhang, centred on the boundary (half the inter-cell gap). No animation.
+
+**Removed.** `BagState.insertMode / cursorGap / SetInsertMode / CursorGap / UpdateCursorGap / CloseCursorGap`, `Layout.CELL_GAP` and the `cursorGap` input, `theme.gapGlyph`, the `MODIFIER_STATE_CHANGED → SetInsertMode` path (the catcher is toggled there instead), the two Shift-drag tests (replaced by `InsertPointAt` / `MoveFreeToBoundary` tests).
+
+**Plan** (incremental; each step leaves the suite green)
+
+- [ ] **Step 1 — sections only.** `Layout.InsertPointAt` for section rows; `BagState:InsertAt` section branch; catcher + marker in `Window.lua`; remove the cursor-gap machinery; `theme.insertMarker`, drop `gapGlyph`. Incoming rows: catcher not shown yet (Step 2). Typed strip: inert, by design. Tests: nearest boundary before-first / between / after-last; multi-row boundary. In-game: Shift-drop onto a kept item inserts before it; marker tracks; Shift release restores stock swap; a Shift-drop in combat lands and shows the footer notice.
+- [ ] **Step 2 — incoming.** `Sections.MoveFreeToBoundary`; `InsertAt` incoming branch; catcher shown over incoming when a general hole exists. Tests: hole re-ordered to the named boundary; no hole → nil.
+- [ ] SPECS: D14 row -> "we own lock drops **and every Shift drop on a general run**"; "Pinning by direct manipulation" loses its gap wording.
 
 **Search.** A small edit box in the upper right. On each text change, every visible item whose name does not contain the query (case-insensitive, plain substring) is desaturated and dimmed; matches stay normal. Empty box restores everything. Escape clears and unfocuses. Appearance-only, so safe in combat.
 

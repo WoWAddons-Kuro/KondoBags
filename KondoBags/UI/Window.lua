@@ -181,6 +181,11 @@ local function CreateWindow(theme)
 
   frame.Money = frame.Footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   frame.Money:SetJustifyH("RIGHT")
+  -- Combat notice (footer-left). Shown when a drop happens in combat and the window cannot redraw
+  -- (secure cells are locked); hidden by the replay render on PLAYER_REGEN_ENABLED.
+  frame.Pending = frame.Footer:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  frame.Pending:SetJustifyH("LEFT"); frame.Pending:SetTextColor(1, 0.6, 0.2)
+  frame.Pending:SetText("Move pending, will apply out of combat..."); frame.Pending:Hide()
 
   frame.Grid = CreateFrame("Frame", nil, frame)
   frame.Grid:SetFrameLevel(frame:GetFrameLevel() + 5)
@@ -225,6 +230,7 @@ end
 -- cells
 -- ---------------------------------------------------------------------------
 local Cell_OnClick, Cell_OnEnter, Cell_OnLeave, Cell_OnDragStart, Cell_OnReceiveDrag
+local AddChargesText   -- defined after DecorateSecure, used by it and NewCell
 
 -- Two cell pools (D14):
 --   plain  -- our Buttons: lock cells, cursor-gap cells, and every slot of the MOCK bag
@@ -282,6 +288,57 @@ local function DecorateSecure(b)
   b.qborder = b.IconBorder
   b.count = b.Count
   b.secure = true
+  AddChargesText(b)
+end
+
+-- Charge count ("⚡3") on a charge-based item. TOP-LEFT so it never shares a corner with the stack
+-- count (bottom-right), and a glyph + amber tint so the two can never be read as the same kind of
+-- number. Drawn on both cell pools; hidden when the item has no charges.
+local CHARGE_GLYPH = "|TInterface\\Icons\\Spell_Nature_Lightning:0:0:0:0:64:64:6:58:6:58|t"
+AddChargesText = function(b)
+  b.charges = b:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+  b.charges:SetPoint("TOPLEFT", 2, -2)
+  b.charges:SetTextColor(1, 0.82, 0.3)
+  b.charges:Hide()
+end
+local function SetCharges(b, n)
+  if not b.charges then return end
+  if n then b.charges:SetText(CHARGE_GLYPH .. n); b.charges:Show() else b.charges:Hide() end
+end
+
+-- Item cooldown sweep + text on a secure cell. The template ships a Cooldown child
+-- (CooldownFrameTemplate) that only stock's UpdateItems drives; we drive it from DressCell and from
+-- BAG_UPDATE_COOLDOWN (Window.RefreshCooldowns). Mirrors ContainerFrameItemButtonMixin:UpdateCooldown.
+local function SetCooldown(b, bagID, slot, hasItem)
+  -- Resolve the Cooldown child ONCE. The template declares <Cooldown name="$parentCooldown">; on
+  -- Forever it also has parentKey="Cooldown", on Era (ContainerFrame.xml:160) it does NOT, so
+  -- b.Cooldown is nil there and the sweep was never drawn (owner, /kondo cd: "NO Cooldown child").
+  -- Fall back to the global name, and if the client ships neither, make our own.
+  local cd = b.Cooldown
+  if not cd then
+    cd = _G[b:GetName() .. "Cooldown"]
+    if not cd then
+      cd = CreateFrame("Cooldown", b:GetName() .. "Cooldown", b, "CooldownFrameTemplate")
+      cd:SetAllPoints(b)
+    end
+    b.Cooldown = cd
+  end
+  if not hasItem or not C_Container.GetContainerItemCooldown then cd:Hide(); return end
+  local start, duration, enable = C_Container.GetContainerItemCooldown(bagID, slot)
+  -- `enable` is 1 while the item is usable (cooldown running or not) and 0 while it is NOT usable
+  -- for another reason (e.g. a potion in combat lockout). A sweep is drawn only when there is a
+  -- real duration AND the slot is enabled -- what stock does. Call SetCooldown directly: the
+  -- CooldownFrame_Set wrapper is missing on some clients and the template's Cooldown child starts
+  -- hidden, so Show() has to be ours.
+  local hasCD = (duration or 0) > 0 and (enable or 0) ~= 0
+  if hasCD then
+    cd:SetCooldown(start, duration)
+    cd:Show()
+  else
+    cd:Hide()
+  end
+  -- Sanity for the "why no sweep" debug: last values the client gave us, readable via /kondo cd.
+  b.cdDebug = { start = start, duration = duration, enable = enable }
 end
 
 -- Hovering a slot marks it "seen": drop the client's new flag and kill the glow NOW. Stock mainline
@@ -336,6 +393,7 @@ local function NewCell(i)
   b.qborder:SetAllPoints()
   b.count = b:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
   b.count:SetPoint("BOTTOMRIGHT", -3, 2)
+  AddChargesText(b)
   b.dim = b:CreateTexture(nil, "OVERLAY", nil, 4)
   b.dim:SetAllPoints(); b.dim:SetColorTexture(0, 0, 0, 0.75); b.dim:Hide()
   b.hl = b:CreateTexture(nil, "HIGHLIGHT")
@@ -513,6 +571,8 @@ local function DressCell(b, cell, theme)
     local item = ref.item
     SetItemButtonTexture(b, item and item.icon or nil)
     SetItemButtonCount(b, item and item.count or 0)
+    SetCharges(b, item and item.charges or nil)
+    SetCooldown(b, ref.bagID, ref.slot, item ~= nil)
     SetItemButtonQuality(b, item and item.quality or nil, item and item.itemID or nil)
     SetItemButtonDesaturated(b, item and item.locked or false)
     ApplyNormalTint()
@@ -560,6 +620,7 @@ local function DressCell(b, cell, theme)
       b.icon:SetTexture(item.icon); b.icon:Show()
       if item.quality and item.quality >= 2 then b.qborder:SetVertexColor(QualityColor(item.quality)); b.qborder:Show() end
       if (item.count or 1) > 1 then b.count:SetText(item.count); b.count:Show() end
+      SetCharges(b, item.charges)
       if view.bag:IsHeld(cell.ref) then b:SetAlpha(0.4) end   -- "picked up"
     else
       SetGlyph(b, EmptyGlyph(cell, theme))
@@ -754,9 +815,12 @@ function Window.Render()
     frame.Footer:SetHeight(bar.height)
     frame.Footer:Show()
     frame.Money:SetPoint("RIGHT", frame.Footer, "RIGHT", -6, 0)
+    frame.Pending:ClearAllPoints(); frame.Pending:SetPoint("LEFT", frame.Footer, "LEFT", 6, 0)
   else
     frame.Footer:Hide()
     frame.Money:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -f.padRight - 2, f.padBottom + 2)
+    frame.Pending:ClearAllPoints(); frame.Pending:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", f.padLeft + 2, f.padBottom + 2)
+    frame.Pending:SetParent(frame)
   end
 
   -- Cell assignment. Live slots (view.bag.live) take SECURE buttons from their own pool; everything
@@ -765,6 +829,9 @@ function Window.Render()
   local useSecure = view.bag.live == true
   if useSecure and InCombatLockdown() then
     view.renderDeferred = true
+    -- The notice is about the PLAYER'S move, not about being in combat: only a drop made in combat
+    -- (BagState.movePending) shows it. A render deferred for any other reason stays silent.
+    frame.Pending:SetShown(view.bag.movePending == true)
     Window.ApplySearch(frame.Search:GetText())
     return
   end
@@ -797,6 +864,8 @@ function Window.Render()
   for i = ci + 1, #cells do cells[i]:Hide(); cells[i].cell = nil end
   for i = si + 1, #secureCells do secureCells[i]:Hide(); secureCells[i].cell = nil end
   view.renderDeferred = false
+  view.bag.movePending = nil
+  frame.Pending:Hide()
 
   Window.ApplySearch(frame.Search:GetText())
   if ns.EditMode then ns.EditMode.OnWindowResized(w, h) end
@@ -820,9 +889,36 @@ function Window.ApplySearch(text)
   apply(cells); apply(secureCells)
 end
 
+-- BAG_UPDATE_COOLDOWN: re-read every shown secure cell's cooldown in place (no re-dress, no
+-- re-parent; safe in combat -- the Cooldown child is not a protected frame).
+function Window.RefreshCooldowns()
+  if not frame or not frame:IsShown() then return end
+  for _, b in ipairs(secureCells) do
+    if b:IsShown() and b.cell and b.cell.ref then
+      SetCooldown(b, b.cell.ref.bagID, b.cell.ref.slot, b.cell.ref.item ~= nil)
+    end
+  end
+end
+
 -- In-place update of the one secure cell showing `ref` (lock state during a Blizzard drag). No
 -- re-parent, no re-anchor, no re-dress: only the desaturation. Anything heavier mid-gesture cancels
 -- the client's own pickup.
+-- Debug (/kondo cd): state of the Cooldown child on the secure cell showing bag:slot.
+function Window.DebugCooldown(bagID, slot)
+  for _, b in ipairs(secureCells) do
+    local r = b.cell and b.cell.ref
+    if r and r.bagID == bagID and r.slot == slot then
+      local cd = b.Cooldown
+      if not cd then return "NO Cooldown child on cell" end
+      local s, d = cd:GetCooldownTimes()
+      return string.format("shown=%s lvl=%d/%d alpha=%.2f times=%s/%s btnShown=%s dbg=%s",
+        tostring(cd:IsShown()), cd:GetFrameLevel(), b:GetFrameLevel(), cd:GetAlpha(), tostring(s), tostring(d),
+        tostring(b:IsShown()), b.cdDebug and (tostring(b.cdDebug.start) .. "/" .. tostring(b.cdDebug.duration) .. "/" .. tostring(b.cdDebug.enable)) or "nil")
+    end
+  end
+  return "slot not currently drawn by a secure cell"
+end
+
 function Window.RefreshRef(ref)
   if not frame or not frame:IsShown() then return end
   for _, b in ipairs(secureCells) do

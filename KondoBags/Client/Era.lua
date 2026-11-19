@@ -74,6 +74,10 @@ function P.SlotInfo(bag, slot)
   }
 end
 
+-- Charges on a charge-based item: the shared tooltip scan in Client.lua (hidden GameTooltip on Era).
+P.Charges = Client.TooltipCharges
+P.InvalidateCharges = Client.InvalidateTooltipCharges
+
 -- KondoBags_QuestFlags; GetContainerItemQuestInfo returns the same table on Era (confirmed in _EXTERNAL_APIS).
 function P.QuestInfo(bag, slot)
   -- Era 1.15 DECLARES the same ItemQuestInfo struct (ContainerDocumentation.lua:659) but the live

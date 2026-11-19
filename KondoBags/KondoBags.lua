@@ -242,6 +242,22 @@ local function Slash(msg)
     StaticPopup_Show("KONDOBAGS_RESET_ALL")
   elseif cmd == "options" or cmd == "config" or cmd == "settings" then
     ns.Options.Open()
+  elseif cmd == "cd" then
+    -- Debug: what GetContainerItemCooldown says for every occupied slot (why no sweep?).
+    local P = ns.Client.Active()
+    for _, bag in ipairs(P.BagIDs()) do
+      for slot = 1, P.NumSlots(bag) do
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info then
+          local s, d, e = C_Container.GetContainerItemCooldown(bag, slot)
+          if (d or 0) > 0 then
+            Print("[%d:%d] %s start=%s dur=%s enable=%s now=%.1f", bag, slot, tostring(info.itemName), tostring(s), tostring(d), tostring(e), GetTime())
+            local cdInfo = ns.Window.DebugCooldown and ns.Window.DebugCooldown(bag, slot)
+            if cdInfo then Print("        cell: %s", cdInfo) end
+          end
+        end
+      end
+    end
   elseif cmd == "cursor" then
     -- Debug: what the client says about the carried item vs each typed bag kind.
     local kind, itemID, link = GetCursorInfo()
@@ -322,6 +338,7 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
     ns.StockBags.Setup()
     f:RegisterEvent("BAG_UPDATE")
     f:RegisterEvent("BAG_UPDATE_DELAYED")
+    f:RegisterEvent("BAG_UPDATE_COOLDOWN")
     f:RegisterEvent("PLAYER_MONEY")
     f:RegisterEvent("ITEM_LOCK_CHANGED")
     f:RegisterEvent("CURSOR_CHANGED")
@@ -329,8 +346,13 @@ f:SetScript("OnEvent", function(_, event, arg1, arg2)
     Print("loaded (%s). Stock bags replaced; /kondo status", ns.Client.Active().name)
   elseif event == "BAG_UPDATE" then
     dirty = true
+    -- A used charge keeps the same item link, so the per-link charge cache must be dropped for the
+    -- bag that changed; the rescan on BAG_UPDATE_DELAYED re-reads the tooltip for those slots.
+    local P = ns.Client.Active(); if P.InvalidateCharges and arg1 then P.InvalidateCharges(arg1) end
   elseif event == "BAG_UPDATE_DELAYED" then
     OnBagsChanged()
+  elseif event == "BAG_UPDATE_COOLDOWN" then
+    ns.Window.RefreshCooldowns()
   elseif event == "ITEM_LOCK_CHANGED" then
     OnItemLockChanged(arg1, arg2)
   elseif event == "CURSOR_CHANGED" then

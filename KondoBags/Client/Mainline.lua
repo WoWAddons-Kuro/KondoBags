@@ -1,4 +1,4 @@
--- KondoBags Client/Mainline.lua -- provider for the Mainline UI family: Forever, Retail, Cata, Mists.
+﻿-- KondoBags Client/Mainline.lua -- provider for the Mainline UI family: Forever, Retail, Cata, Mists.
 -- Also the fallback when the Era split cannot be detected. Everything is C_Container / C_Item.
 
 local _, ns = ...
@@ -63,6 +63,10 @@ function P.SlotInfo(bag, slot)
     name    = info.itemName,
   }
 end
+
+-- Charges on a charge-based item: the shared tooltip scan in Client.lua (identical on every client).
+P.Charges = Client.TooltipCharges
+P.InvalidateCharges = Client.InvalidateTooltipCharges
 
 -- KondoBags_QuestFlags for the quest highlight; nil when the client has no quest info API.
 function P.QuestInfo(bag, slot)
