@@ -318,6 +318,7 @@ The intended complete list:
 | Lock position | locked / movable | movable | Settings panel **and** the Edit Mode dialog for the window (`KondoBagsCharDB.window.locked`). Movable = the window drags by its frame at any time, as most addons do; locked = only in Edit Mode. |
 | Window position, scale and column count | — | — | **Edit Mode**: drag the frame; drag its corner grip to set columns (width snaps to whole cells, height follows). Not a setting of ours. |
 | Always compare items | on / off | off | Settings panel, "Item utilities". Not ours either: reads/writes Blizzard's `alwaysCompareItems` CVar directly (no `KondoBagsDB` key), so the box tracks the stock setting. |
+| Create new stacks next to existing stacks | on / off | on | Settings panel, "Item utilities" (`KondoBagsDB.stackAdjacent`). **Stack adoption**: a general slot that was empty on the previous scan and now holds an itemID that a KEPT slot also holds is `Pin`ned into that group directly in front of the sibling (`water, 2/20 linen, 20/20 linen, food`). Map edit only, zero server ops; the loot stays in the physical slot Blizzard filled. Siblings only in incoming: nothing happens (incoming is physical order). First kept sibling in display order wins when there are several. `Sections.AdoptNewStacks`, driven from `OnBagsChanged` with a slotIndex→itemID snapshot of the previous scan. |
 
 Pins are managed in the window itself. Anything proposed beyond this list needs a reason it cannot be a fixed behaviour.
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Stack adoption** (Settings > Item utilities, "Create new stacks next to existing stacks", default on): loot that
+  starts a new stack of an item you already keep in a section is drawn in that section right in front of the existing
+  stack. The item is not moved; only where it is drawn changes.
+- New-item glow is white instead of green (green read as uncommon gear).
 - Settings: "Item utilities" section with an "Always compare items in tooltips" checkbox (Blizzard's `alwaysCompareItems` CVar, default off).
 - Mousing over a "new" item clears its green glow at once (stock mainline does this too; stock Era does not).
   The glow's 1-second pulse is Blizzard's template animation, unchanged.

@@ -442,6 +442,45 @@ test("live pin from OUTSIDE (typed / external): ONE Pickup into the lowest free 
 end)
 
 -- ---------------------------------------------------------------------------
+-- Stack adoption (Settings "Create new stacks next to existing stacks")
+-- ---------------------------------------------------------------------------
+test("adopt: loot that starts a new stack of a KEPT item lands in front of the kept sibling; zero moves", function()
+  -- physical 6 water, 7 linen (20/20), 8 food kept in that order; incoming 0..5 with 0,1 filled
+  local slots = Bag(9, { 0, 1, 6, 7, 8 })
+  slots[8].item = { itemID = 2589, name = "Linen", count = 20 }
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = slots, columns = 7 })
+  eq(Picture(bag), "_ _ _ _ 1 0 | 6 2489 8")
+  local prev = {}
+  for i, r in ipairs(bag.slots) do if r.item then prev[i - 1] = r.item.itemID end end
+  -- Blizzard fills physical 2 (lowest free) with 2 linen
+  slots[3].item = { itemID = 2589, name = "Linen", count = 2 }
+  bag:SetSlots(slots)
+  eq(S.AdoptNewStacks(bag.store, prev, bag.slots, bag:IsFreeFn()), 1)
+  eq(Picture(bag), "_ _ _ 1 0 | 6 2489 2489 8", "new stack sits in front of the old one; water and food unmoved")
+  eq(bag.store.list[1].order[2], 2, "the NEW slot (physical 2) is the first linen cell")
+  eq(bag.store.list[1].order[3], 7, "the old 20/20 stack follows")
+  eq(bag.slots[3].item.count, 2, "no physical move: the 2-stack is still in physical 2")
+  -- same scan again: nothing is "new" any more
+  local prev2 = {}
+  for i, r in ipairs(bag.slots) do if r.item then prev2[i - 1] = r.item.itemID end end
+  eq(S.AdoptNewStacks(bag.store, prev2, bag.slots, bag:IsFreeFn()), 0)
+end)
+
+test("adopt: sibling only in incoming -> nothing; kept sibling FIRST in its group -> new stack becomes first", function()
+  local slots = Bag(6, { 0, 5 })
+  slots[1].item = { itemID = 777, name = "Ore" }                   -- physical 0, incoming
+  local bag = B.New({ store = KeepStore({ 5 }), slots = slots, columns = 6 })
+  local prev = { [0] = 777, [5] = 105 }
+  slots[2].item = { itemID = 777, name = "Ore" }                   -- new ore in physical 1
+  bag:SetSlots(slots)
+  eq(S.AdoptNewStacks(bag.store, prev, bag.slots, bag:IsFreeFn()), 0, "no kept sibling: left in incoming")
+  slots[3].item = { itemID = 105, name = "i105" }                  -- new stack of the kept item (phys 5 is first/only in Keep)
+  bag:SetSlots(slots)
+  eq(S.AdoptNewStacks(bag.store, { [0] = 777, [1] = 777, [5] = 105 }, bag.slots, bag:IsFreeFn()), 1)
+  eq(table.concat(bag.store.list[1].order, ","), "2,5", "new slot in front of a first-in-group sibling")
+end)
+
+-- ---------------------------------------------------------------------------
 for _, t in ipairs(tests) do
   local okRun, err = pcall(t.fn)
   if okRun then

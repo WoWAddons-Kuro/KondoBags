@@ -166,6 +166,45 @@ function Sections.MoveToPositionOf(store, slot, otherSlot)
   return true
 end
 
+-- Stack adoption (KondoBagsDB.stackAdjacent): a slot that was EMPTY on the previous scan and now
+-- holds an item whose itemID is also held by a KEPT slot is pinned into that group right in front
+-- of the sibling. Pure map edit, zero server ops: the loot stays in the physical slot Blizzard
+-- chose; we only change where it is drawn. Loot whose siblings are all in incoming is left alone
+-- (incoming is physical order, there is nothing to remap to).
+--   prevItemIDs: { [KondoBags_SlotIndex] = itemID }  of the previous scan (nil = first scan; no-op)
+--   slots:       { KondoBags_SlotRef... }            current scan, index i = slot i-1
+-- Returns the number of slots adopted.
+function Sections.AdoptNewStacks(store, prevItemIDs, slots, isFree)
+  if not prevItemIDs then return 0 end
+  -- itemID -> first KEPT slot holding it, in display order (store.list, then group.order)
+  local keptByItem = {}
+  for _, g in ipairs(store.list) do
+    for _, s in ipairs(g.order) do
+      local ref = slots[s + 1]
+      local id = ref and ref.item and ref.item.itemID
+      if id and keptByItem[id] == nil then keptByItem[id] = s end
+    end
+  end
+  if next(keptByItem) == nil then return 0 end
+  local adopted = 0
+  for i, ref in ipairs(slots) do
+    local slot = i - 1
+    local id = ref.item and ref.item.itemID
+    if id and prevItemIDs[slot] == nil and not store.kept[slot] then        -- newly filled, still incoming
+      local sibling = keptByItem[id]
+      if sibling and sibling ~= slot then
+        local group = Sections.GroupOfSlot(store, sibling)
+        -- Anchor = the slot BEFORE the sibling so the new stack lands directly in front of it
+        -- (water, 2/20 linen, 20/20 linen, food). Sibling first in group -> anchor nil = index 1.
+        local idx = IndexInOrder(group, sibling)
+        local anchorSlot = idx and idx > 1 and group.order[idx - 1] or nil
+        if Sections.Pin(store, group, slot, anchorSlot, isFree) then adopted = adopted + 1 end
+      end
+    end
+  end
+  return adopted
+end
+
 -- Remove a group: every slot is Released. ZERO server ops. false if unknown or the last group.
 function Sections.Dissolve(store, sectionID, isFree)
   local g, i = Sections.Find(store, sectionID)

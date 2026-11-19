@@ -527,8 +527,13 @@ local function DressCell(b, cell, theme)
     -- The template owns a "new item" glow (NewItemTexture + newitemglowAnim/flashAnim) that only
     -- stock's UpdateItems drives; left alone it can show on every cell. We draw it ourselves:
     -- glow only when the client flags the slot new (looted this session), exactly like stock.
+    -- Colour: the template defaults to bags-glow-green, which reads as "uncommon gear"; stock
+    -- mainline picks an atlas per quality. We use the neutral white glow for every new item.
     local isNew = item ~= nil and C_NewItems and C_NewItems.IsNewItem and C_NewItems.IsNewItem(ref.bagID, ref.slot)
-    if b.NewItemTexture then b.NewItemTexture:SetShown(isNew and true or false) end
+    if b.NewItemTexture then
+      if isNew and b.NewItemTexture.SetAtlas then b.NewItemTexture:SetAtlas("bags-glow-white", true) end
+      b.NewItemTexture:SetShown(isNew and true or false)
+    end
     if b.BattlepayItemTexture then b.BattlepayItemTexture:Hide() end
     if b.newitemglowAnim then
       if isNew then if not b.newitemglowAnim:IsPlaying() then b.newitemglowAnim:Play() end

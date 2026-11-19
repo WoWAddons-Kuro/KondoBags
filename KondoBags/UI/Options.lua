@@ -179,6 +179,9 @@ local function CreateOptions()
   end
   iu:Add(CVarCheck(iu, "alwaysCompareItems", "Always compare items in tooltips",
     "Show the equipped item's tooltip next to a bag item's without holding Shift (Blizzard's alwaysCompareItems CVar; default off)."), 26)
+  iu:Add(Check(iu, "stackAdjacent", "Create new stacks next to existing stacks",
+    "When loot starts a new stack of an item you already keep in a section, the new stack is shown in that section right next to the existing one. The item is not moved; only where it is drawn changes.",
+    nil), 26)
   iu:Finish()
 
   -- Section: Reset

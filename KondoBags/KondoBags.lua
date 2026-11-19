@@ -21,6 +21,7 @@ local function InitDB()
   KondoBagsDB.typedGlyph = KondoBagsDB.typedGlyph or "bag" -- empty typed-slot art: "bag" (equipped bag's icon) | "kind" (item-type art)
   KondoBagsDB.ammoGlyph = nil                                             -- pre-release key, retired
   if KondoBagsDB.showKeys == nil then KondoBagsDB.showKeys = false end   -- keyring clients: draw held keys as a typed run (default off)
+  if KondoBagsDB.stackAdjacent == nil then KondoBagsDB.stackAdjacent = true end   -- new stacks join a kept stack of the same item (default on)
   KondoBagsCharDB.version = KondoBagsCharDB.version or DB_VERSION
   KondoBagsCharDB.window = KondoBagsCharDB.window or { columns = 10 }   -- anchor chosen lazily by EditMode.Placement (stock bag spot on first run)
   KondoBagsCharDB.mockSections = nil                                      -- M0 mockup store, retired (SPECS/01 R5)
@@ -170,6 +171,14 @@ StaticPopupDialogs["KONDOBAGS_RESET_ALL"] = {
 -- Event-driven rescan: BAG_UPDATE marks dirty, BAG_UPDATE_DELAYED (coalesced by the client) rescans.
 -- Everything else (money) is cheap enough to refresh on the same tick.
 local dirty = false
+-- Stack adoption needs to know which general slots were EMPTY before this scan: snapshot of
+-- slotIndex -> itemID from the last applied scan. nil until the first scan (nothing is "new" then).
+local prevItemIDs
+local function SnapshotItemIDs(b)
+  local t = {}
+  for i, ref in ipairs(b.slots) do if ref.item then t[i - 1] = ref.item.itemID end end
+  return t
+end
 local function OnBagsChanged()
   if not dirty or not liveBag then return end
   -- While our own MoveQueue is mid-chain the bag is half-moved; a Reconcile now would "repair" the
@@ -183,6 +192,13 @@ local function OnBagsChanged()
   end
   dirty = false
   liveBag:SetSlots(LiveScan())
+  -- Newly filled slots whose item is already KEPT somewhere join that group next to the sibling
+  -- (SPECS/00 "Stack adoption"). Map edit only; the loot stays where Blizzard put it.
+  if KondoBagsDB.stackAdjacent and prevItemIDs then
+    local n = ns.Sections.AdoptNewStacks(liveBag.store, prevItemIDs, liveBag.slots, liveBag:IsFreeFn())
+    if n > 0 then liveBag:Emit("changed") end
+  end
+  prevItemIDs = SnapshotItemIDs(liveBag)
   KondoBagsCharDB.sections = liveBag.store
   lastLocked = nil
   SyncCursor()
