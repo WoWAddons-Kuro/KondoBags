@@ -28,10 +28,16 @@ local function CreateOptions()
     self:SetVerticalScroll(math.max(0, math.min(max, self:GetVerticalScroll() - delta * 40)))
   end)
 
+  -- App icon top-left (Media\KondoBags_Icon.tga, made from Assets\KondoBags_AppIcon.png by
+  -- Scripts\MakeAddonIcon.cs); title and blurb sit to its right.
+  local ICON = 48
+  local logo = content:CreateTexture(nil, "ARTWORK")
+  logo:SetSize(ICON, ICON); logo:SetPoint("TOPLEFT", 16, -12)
+  logo:SetTexture("Interface\\AddOns\\KondoBags\\Media\\KondoBags_Icon.tga")
   local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  title:SetPoint("TOPLEFT", 16, -16); title:SetText("Kondo Bags")
+  title:SetPoint("TOPLEFT", logo, "TOPRIGHT", 10, -4); title:SetText("Kondo Bags")
   local sub = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(560); sub:SetJustifyH("LEFT")
+  sub:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6); sub:SetWidth(560 - ICON - 10); sub:SetJustifyH("LEFT")
   sub:SetText("The stock bag plus Keep rows. Drop an item on a lock cell to keep it there. Position, scale and column count are set in Edit Mode; pins are managed in the window itself.")
 
   -- Layout grid: every widget hangs off `last` at a fixed left column; sections are bordered

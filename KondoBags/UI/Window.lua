@@ -284,12 +284,25 @@ local function DecorateSecure(b)
   b.secure = true
 end
 
+-- Hovering a slot marks it "seen": drop the client's new flag and kill the glow NOW. Stock mainline
+-- does this in its OnEnter; Era's OnEnter only removes the flag (the hide/stop block is commented out
+-- in ContainerFrame_Shared.lua) so the pulse would run until the next re-render. Do it fully here.
+local function ClearNewItemGlow(b)
+  local ref = b.cell and b.cell.ref
+  if ref and C_NewItems and C_NewItems.RemoveNewItem then C_NewItems.RemoveNewItem(ref.bagID, ref.slot) end
+  if b.NewItemTexture then b.NewItemTexture:Hide() end
+  if b.BattlepayItemTexture then b.BattlepayItemTexture:Hide() end
+  if b.newitemglowAnim and b.newitemglowAnim:IsPlaying() then b.newitemglowAnim:Stop() end
+  if b.flashAnim and b.flashAnim:IsPlaying() then b.flashAnim:Stop() end
+end
+
 local function NewSecureCell(i, bagID)
   local b = CreateFrame("ItemButton" , "KondoBagsItem" .. i, BagHolder(bagID), "ContainerFrameItemButtonTemplate")
   DecorateSecure(b)
   -- Our hover tracking for the cursor gap rides alongside Blizzard's tooltip handlers.
   b:HookScript("OnEnter", function(self)
     if self.cell and view.bag then view.hoverButton = self; view.bag:SetHover(self.cell) end
+    ClearNewItemGlow(self)
   end)
   b:HookScript("OnLeave", function(self)
     if view.hoverButton == self then view.hoverButton = nil; if view.bag then view.bag:SetHover(nil) end end

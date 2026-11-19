@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Mousing over a "new" item clears its green glow at once (stock mainline does this too; stock Era does not).
+  The glow's 1-second pulse is Blizzard's template animation, unchanged.
+- App icon on the Settings panel (`Media\KondoBags_Icon.tga`).
 - **Stock bags replaced.** `B`, the bag-bar buttons, `/kondo`, Escape, and vendor / bank / mail / auction / trade all
   open and close the KondoBags window; the Blizzard bag frames never show. Hook-only (no stock function is replaced), so
   nothing is tainted; bag-bar buttons highlight while the window is open; stock open/close sounds. Bank bags still open
