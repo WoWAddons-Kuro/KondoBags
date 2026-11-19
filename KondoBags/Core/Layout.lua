@@ -145,8 +145,10 @@ function Layout.InsertPointAt(layout, metrics, x, y)
     if not bestDist or d < bestDist then bestRow, bestDist = r, d end
   end
   local row = bestRow and layout.rows[bestRow]
-  if not row or not row.sectionID then return nil end           -- incoming / typed: Step 2 / inert
-  -- 2. slot cells of this row in column order; the lock (col 0 when slim) is not a candidate neighbour
+  if not row or row.typed then return nil end                   -- typed strip: Shift is inert (spec)
+  local run = row.sectionID and "section" or "incoming"
+  -- 2. slot cells of this row in column order; a section's lock (col 0 when slim) is not a neighbour.
+  --    Incoming rows hold slot cells only; free cells count as neighbours too (they are positions).
   local slots = {}
   for _, c in ipairs(row.cells) do
     if c.kind == Layout.CELL_SLOT and c.ref then slots[#slots + 1] = c end
@@ -156,7 +158,7 @@ function Layout.InsertPointAt(layout, metrics, x, y)
   local half = (metrics.pitchX - metrics.cellSize) / 2
   local candidates = {}
   if #slots == 0 then
-    -- an empty group: the only boundary is right after its lock
+    -- an empty group: the only boundary is right after its lock (an incoming row is never empty)
     local lock
     for _, c in ipairs(row.cells) do if c.kind == Layout.CELL_DROP then lock = c end end
     local bx = lock and (lock.slim and 0 or cellRight(lock) + half) or 0
@@ -177,7 +179,7 @@ function Layout.InsertPointAt(layout, metrics, x, y)
   -- Multi-row groups: the row's own first/last boundary is the same INDEX as the neighbouring row's
   -- last/first, so afterRef/beforeRef taken from this row alone are correct; the marker stays on this row.
   return {
-    run = "section", sectionID = row.sectionID,
+    run = run, sectionID = row.sectionID,
     afterRef = best.c.after, beforeRef = best.c.before,
     markerRow = bestRow, markerX = best.c.x,
   }

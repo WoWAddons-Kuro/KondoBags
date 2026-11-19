@@ -166,6 +166,42 @@ function Sections.MoveToPositionOf(store, slot, otherSlot)
   return true
 end
 
+-- Shift-insert into INCOMING (SPECS/00 "Shift-insert", Step 2). Incoming is the positional map;
+-- holes are interchangeable (D15), so "insert a free slot at this boundary" is: remove the lowest
+-- free slot's position and re-insert it between the two named neighbours. Pure map edit; the caller
+-- then Pickup()s into that slot. `afterSlot` / `beforeSlot` are the PHYSICAL slots either side of
+-- the boundary in reading order (after = the cell to the LEFT, i.e. the HIGHER position; before =
+-- the cell to the RIGHT, LOWER position); either may be nil at the run's ends. Returns the slot
+-- moved, or nil when incoming has no hole.
+function Sections.MoveFreeToBoundary(store, afterSlot, beforeSlot, isFree)
+  -- Spend the hole with the LOWEST physical index (where Blizzard would loot next). A hole sitting
+  -- right next to the marker is a position like any other: the inserted cell lands BETWEEN the two
+  -- neighbours and the holes keep their positions (D15: holes re-sort backing, never positions).
+  local hole, holeV
+  for v, s in ipairs(store.map) do
+    if isFree(s) and (hole == nil or s < hole) then hole, holeV = s, v end
+  end
+  if not hole then return nil end
+  -- Resolve the boundary BEFORE removing the hole so neighbour positions are read from the intact map.
+  local afterV = afterSlot ~= nil and PositionOf(store, afterSlot) or nil
+  local beforeV = beforeSlot ~= nil and PositionOf(store, beforeSlot) or nil
+  if (afterSlot ~= nil and not afterV) and (beforeSlot ~= nil and not beforeV) then return nil end
+  table.remove(store.map, holeV)
+  -- Reading order is position DESCENDING, so the boundary "after X / before Y" sits at the position
+  -- just below X (= just above Y). Resolve from whichever neighbour exists.
+  local target
+  if afterV then
+    target = afterV > holeV and afterV or afterV             -- X's position after the removal shift
+    if afterV > holeV then target = afterV - 1 end           -- removing a lower position shifts X down by one
+  elseif beforeV then
+    target = (beforeV > holeV and beforeV - 1 or beforeV) + 1 -- just above Y (same shift rule)
+  else
+    target = #store.map + 1                                  -- empty run: only position
+  end
+  table.insert(store.map, target, hole)
+  return hole
+end
+
 -- Stack adoption (KondoBagsDB.stackAdjacent): a slot that was EMPTY on the previous scan and now
 -- holds an item whose itemID is also held by a KEPT slot is pinned into that group right in front
 -- of the sibling. Pure map edit, zero server ops: the loot stays in the physical slot Blizzard

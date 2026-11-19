@@ -256,7 +256,7 @@ test("InsertPointAt: nearest boundary on a section row -- before first / between
   p = PointAt(bag, BoundaryAfter(6) + 30, y)                 -- past the right wall
   eq(p.afterRef.slotIndex, 8); eq(p.beforeRef, nil, "after last")
   -- an incoming row answers nil (Step 2 territory)
-  ok(PointAt(bag, ColLeft(2), -18) == nil, "incoming row: nil in Step 1")
+  eq(PointAt(bag, ColLeft(2), -18).run, "incoming", "incoming row answers too (Step 2)")
   -- outside every row band snaps to the nearest row
   p = PointAt(bag, BoundaryAfter(4), -300)
   eq(p.sectionID, bag.store.list[1].id); eq(p.markerRow, 2)
@@ -315,6 +315,72 @@ test("InsertAt (live): ONE Pickup on the held item's own slot; store commits whe
   ok(not S.IsKept(bag.store, 2), "not committed yet")
   bag.moveQueue:OnLockChanged(false)
   eq(table.concat(bag.store.list[1].order, ","), "6,7,2,8")
+end)
+
+test("MoveFreeToBoundary: the lowest hole re-positions between the named neighbours; occupied cells never move", function()
+  -- physical 0..8: items in 0,1,3,5 ; kept 6,8 ; free 2,4,7 -> incoming reading order _7 5 _4 3 _2 1 0
+  local bag = B.New({ store = KeepStore({ 6, 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
+  eq(IncomingSlots(bag), "_7 5 _4 3 _2 1 0")
+  local isFree = bag:IsFreeFn()
+  -- boundary between 1 (left / higher position) and 0 (right): the lowest hole is 2
+  eq(S.MoveFreeToBoundary(bag.store, 1, 0, isFree), 2)
+  eq(IncomingSlots(bag), "_7 5 _4 3 1 _2 0", "hole 2 now sits between 1 and 0; 5,3,1,0 did not move")
+  -- left wall: before 7 (nothing after)
+  eq(S.MoveFreeToBoundary(bag.store, nil, 7, isFree), 2)
+  eq(IncomingSlots(bag), "_2 _7 5 _4 3 1 0")
+  -- right wall: after 0 (nothing before)
+  eq(S.MoveFreeToBoundary(bag.store, 0, nil, isFree), 2)
+  eq(IncomingSlots(bag), "_7 5 _4 3 1 0 _2")
+  -- no hole at all -> nil, map untouched
+  local full = B.New({ store = KeepStore({}), slots = Bag(3, { 0, 1, 2 }), columns = 3 })
+  eq(S.MoveFreeToBoundary(full.store, 1, 0, full:IsFreeFn()), nil)
+  eq(IncomingSlots(full), "2 1 0")
+end)
+
+test("InsertPointAt + InsertIntoIncoming (mock): loose item moves to the marker inside incoming; one Pickup live", function()
+  -- 7 columns: incoming row is _7 5 _4 3 _2 1 0 at cols 1..7
+  local bag = B.New({ store = KeepStore({ 6, 8 }), slots = Bag(9, { 0, 1, 3, 5, 6, 8 }), columns = 7 })
+  local y = -18
+  local p = PointAt(bag, BoundaryAfter(6), y)                -- between col 6 (slot 1) and col 7 (slot 0)
+  eq(p.run, "incoming"); eq(p.afterRef.slotIndex, 1); eq(p.beforeRef.slotIndex, 0)
+  ok(bag:Pickup(bag.slots[6]))                               -- item 5 (col 2)
+  ok(bag:InsertAt(p))
+  -- 5's item now lives in physical 2 (the lowest hole), drawn between 1 and 0; 5's old cell is a hole
+  eq(bag.slots[3].item.itemID, 105); ok(bag.slots[6].item == nil)
+  eq(Picture(bag), "_ _ _ 3 1 5 0 | 6 8")
+  -- a KEPT item Shift-dropped into incoming leaves Keep and lands at the marker
+  ok(bag:Pickup(bag.slots[9]))                               -- kept 8
+  p = PointAt(bag, ColLeft(4) - 1, y)                        -- before col 4 (slot 3)
+  ok(p.beforeRef.slotIndex == 3)
+  ok(bag:InsertAt(p))
+  -- 8 left Keep (one more incoming position), its item went into the lowest hole (physical 4) drawn at the marker
+  ok(not S.IsKept(bag.store, 8)); eq(Picture(bag), "_ _ _ 8 3 1 5 0 | 6")
+  eq(bag.slots[5].item.itemID, 108, "item 8 now sits in physical 4")
+  -- live: ONE Pickup into the hole
+  local live = B.New({ store = KeepStore({ 8 }), slots = Bag(9, { 0, 1, 3, 5, 8 }), columns = 7 })
+  live.live = true
+  local issued = {}
+  live.moveQueue = ns.MoveQueue.New({ Pickup = function(b, s) issued[#issued + 1] = s end },
+    function(i) return live.slots[i + 1].bagID, live.slots[i + 1].slot end)
+  live:SetCursor("external")
+  -- kept={8}: incoming is 8 cells = two rows on 7 columns (_7 on top; _6 5 _4 3 _2 1 0 below): aim at row 2
+  p = PointAt(live, BoundaryAfter(6), -41 - 18)
+  eq(p.afterRef.slotIndex, 1); eq(p.beforeRef.slotIndex, 0)
+  ok(live:InsertAt(p))
+  eq(#issued, 1); eq(issued[1], 3, "placed into physical 2 (slot 3), the lowest hole")
+  live.moveQueue:OnLockChanged(false)
+  -- after the commit the hole sits between 1 and 0
+  local order = {}
+  for v = #live.store.map, 1, -1 do order[#order + 1] = live.store.map[v] end
+  eq(table.concat(order, " "), "7 6 5 4 3 1 2 0")
+  -- no hole: Shift inert
+  local full = B.New({ store = KeepStore({}), slots = Bag(3, { 0, 1, 2 }), columns = 3 })
+  -- ... for an item from OUTSIDE. A loose item's own cell counts as the free slot, so a full bag can
+  -- still be re-ordered within incoming (zero spare slots needed).
+  full:SetCursor("external"); ok(not full:InsertAt(PointAt(full, BoundaryAfter(2), -18)), "external + no hole: inert")
+  full:SetCursor(nil)
+  ok(full:Pickup(full.slots[1])); ok(full:InsertAt(PointAt(full, ColLeft(1) - 1, -18)), "own cell is the hole")
+  eq(IncomingSlots(full), "0 2 1", "item 0 moved to the left wall; nothing else moved")
 end)
 
 test("loose onto loose / empty: stock place; the vacated cell is a hole where it was; backing re-sorts", function()

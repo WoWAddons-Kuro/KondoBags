@@ -251,11 +251,14 @@ end
 -- Shift-insert (SPECS/00 "Shift-insert"): drop the held item at a KondoBags_InsertPoint from
 -- Layout.InsertPointAt. Nothing in the grid moved to produce the point; the store edit is the same
 -- Pin / MoveToGap / PinFromOutside as a lock drop with `anchor = point.afterRef` (the cell LEFT of the
--- marker; nil = first in the group). Step 1: section runs only; anything else returns false.
+-- marker; nil = first in the group). INCOMING run: the lowest free slot is moved to the marker's
+-- boundary in the map (Sections.MoveFreeToBoundary) and the item is placed into it -- one Pickup.
 -- Returns true when the drop was consumed.
 function BagState:InsertAt(point)
   local held = self.held
-  if not held or not point or point.run ~= "section" then return false end
+  if not held or not point then return false end
+  if point.run == "incoming" then return self:InsertIntoIncoming(point) end
+  if point.run ~= "section" then return false end
   local isFree = self:IsFreeFn()
   local anchorSlot = point.afterRef and point.afterRef.slotIndex or nil
   local heldIsRef = type(held) == "table"
@@ -303,6 +306,54 @@ function BagState:InsertAt(point)
     Sections.Pin(self.store, group, held.slotIndex, anchorSlot, isFree)
   end
   return done()
+end
+
+-- Shift-insert into INCOMING. Incoming is the positional map; every cell (occupied or free) is a
+-- position, so the marker's neighbours are PHYSICAL slots and the free pool is interchangeable. The
+-- lowest free slot is re-positioned to the boundary (Sections.MoveFreeToBoundary) and the held item
+-- is placed into it: one Pickup. A held item that is itself loose first leaves its position
+-- (ReorderHoles makes its old cell a hole where it was, D15 fact 1). No free slot -> false (Shift inert).
+function BagState:InsertIntoIncoming(point)
+  local held = self.held
+  if not held or not point or point.run ~= "incoming" then return false end
+  local isFree = self:IsFreeFn()
+  local afterSlot = point.afterRef and point.afterRef.slotIndex or nil
+  local beforeSlot = point.beforeRef and point.beforeRef.slotIndex or nil
+  local heldIsRef = type(held) == "table"
+  if heldIsRef and (point.afterRef == held or point.beforeRef == held) then
+    -- own boundary: no-op; live still needs one Pickup to release the real cursor
+    if self.live then return LiveGesture(self, function() return { { place = true, bagID = held.bagID, slot = held.slot } } end) end
+    self.held = nil; self:Emit("changed"); return true
+  end
+  -- The held item's own slot, when it is a general slot, is the FREE slot after the move: treat it
+  -- as free for the boundary edit so a loose item can be "moved" within incoming with zero server ops
+  -- beyond the single Pickup that puts it down.
+  local heldGeneral = heldIsRef and (held.kind == nil or held.kind == "general")
+  local function isFreeOrHeld(s) return isFree(s) or (heldGeneral and s == held.slotIndex) end
+
+  if self.live then
+    return LiveGesture(self, function(store)
+      -- a kept item leaving Keep: Release gives it a position first
+      if heldGeneral and Sections.IsKept(store, held.slotIndex) then Sections.Release(store, held.slotIndex, isFree) end
+      local hole = Sections.MoveFreeToBoundary(store, afterSlot, beforeSlot, isFreeOrHeld)
+      if not hole then return nil end
+      local r = self.slots[hole + 1]
+      return { { place = true, bagID = r.bagID, slot = r.slot } }      -- drop the cursor item into the hole
+    end)
+  end
+
+  -- MOCK
+  if heldGeneral and Sections.IsKept(self.store, held.slotIndex) then Sections.Release(self.store, held.slotIndex, isFree) end
+  local hole = Sections.MoveFreeToBoundary(self.store, afterSlot, beforeSlot, isFreeOrHeld)
+  if not hole then self.held = nil; self:Emit("cursor"); return false end
+  if heldIsRef then
+    if hole ~= held.slotIndex then self.slots[hole + 1].item, held.item = held.item, nil end
+  else
+    self.slots[hole + 1].item = { itemID = 0, name = "external" }
+  end
+  -- hole backing may have changed; the positions themselves stay (holes never re-sort positions)
+  Sections.ReorderHoles(self.store, isFree)
+  self.held = nil; self:Emit("changed"); return true
 end
 
 -- The + button: a new empty group drawn FIRST, directly under incoming.
