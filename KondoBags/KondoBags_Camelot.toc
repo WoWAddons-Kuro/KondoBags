@@ -1,0 +1,34 @@
+## Interface: 16001
+## Title: Kondo Bags
+## Notes: The stock bag plus Keep rows. Drop an item on a lock cell to keep it there.
+## Author: Kuro
+## Version: @project-version@
+## SavedVariables: KondoBagsDB
+## SavedVariablesPerCharacter: KondoBagsCharDB
+## OptionalDeps: LibStub, LibEditMode
+## IconTexture: Interface\AddOns\KondoBags\Media\KondoBags_Icon.tga
+## X-Website: https://github.com/WoWAddons-Kuro/KondoBags
+
+Libs\LibStub\LibStub.lua
+Libs\LibEditMode\embed.xml
+
+Client\Client.lua
+Client\Mainline.lua
+Client\Era.lua
+Client\Mock.lua
+
+Core\Sections.lua
+Core\Layout.lua
+Core\BagState.lua
+Core\Scan.lua
+Core\MoveQueue.lua
+
+UI\Theme.lua
+UI\Themes\Classic.lua
+UI\Themes\Modern.lua
+UI\Window.lua
+UI\EditMode.lua
+UI\Options.lua
+UI\StockBags.lua
+
+KondoBags.lua
