@@ -167,8 +167,9 @@ stock bags hide the texture entirely (`ContainerFrame.Vanilla.lua`). We draw it 
 
 ### Added in the same tag (owner requests, 2026-11-18)
 
-- **`KondoBagsDB.typedGlyph`** = `"bag"` (default) | `"kind"`: empty typed-slot art is the equipped bag's own icon (provider `BagIcon(bag)` ->
-  `ref.bagIcon`) or the theme's item-type art. Replaces the ammo-only `ammoGlyph`. Options radios aligned (Section:Add dx is cumulative).
+- **`KondoBagsDB.typedGlyph`** = `"kind"` (default since 2026-11-19, was `"bag"`) | `"bag"`: empty typed-slot art is the theme's item-type art
+  (herb, arrow, soul shard, ...) or the equipped bag's own icon (provider `BagIcon(bag)` -> `ref.bagIcon`). Replaces the ammo-only `ammoGlyph`.
+  Options radios aligned (Section:Add dx is cumulative).
 - **No-drop mark** (`cd7fecf`): while an item is carried, typed cells whose family refuses it (`Client.ItemFitsKind(heldFamily, kind)`,
   `BagState:HeldFits`) show the loot-roll Pass circle-X tinted `{1, .55, .55}`; occupied ones are also dimmed; empty ones are not. General
   cells never marked. Provider `ItemFamily(itemIDOrLink)`; `SyncCursor` passes the carried family to `SetCursor(ref, family)`.

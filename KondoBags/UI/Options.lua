@@ -135,9 +135,9 @@ local function CreateOptions()
   -- Section: Bag types
   local bt = Section("Bag types")
   bt:Add(Check(bt, "kindTint", "Tint the border of quiver, herb, soul (and other special bag) slots",
-    "Special bags are drawn as one row above your normal items. The tint says which kind each slot is: orange ammo, green herb, purple soul, blue enchanting, bronze mining, gold keyring, teal reagent.",
+    "Special bags are drawn as one row above your normal items. The tint says which kind each slot is: orange ammo, green herb, purple soul, blue enchanting, bronze mining, leather-brown leatherworking, grey engineering, gold keyring.",
     function() ns.Window.Render() end), 26)
-  -- Empty typed-slot backdrops: radio pair over KondoBagsDB.typedGlyph ("bag" | "kind")
+  -- Empty typed-slot backdrops: radio pair over KondoBagsDB.typedGlyph ("kind" default | "bag")
   local glyphRadios = {}
   local function GlyphRadio(value, label)
     local r = CreateFrame("CheckButton", nil, bt, "UIRadioButtonTemplate"); r:SetSize(16, 16)
@@ -148,14 +148,14 @@ local function CreateOptions()
       ns.Window.Render()
     end)
     r.value = value
-    r.Update = function(self) self:SetChecked((KondoBagsDB.typedGlyph or "bag") == value) end
+    r.Update = function(self) self:SetChecked((KondoBagsDB.typedGlyph or "kind") == value) end
     glyphRadios[#glyphRadios + 1] = r
     -- Section:Add hangs each widget off the previous one's BOTTOMLEFT, so a dx is cumulative: only the
     -- first radio is indented (to sit under the checkbox text), the second gets dx 0 to line up with it.
     return bt:Add(r, 16, -6, #glyphRadios == 1 and 4 or 0)
   end
-  GlyphRadio("bag", "Empty special-bag slots show the equipped bag's own icon (Blizzard style)")
   GlyphRadio("kind", "Empty special-bag slots show item-type art (herb, arrow, soul shard, ...)")
+  GlyphRadio("bag", "Empty special-bag slots show the equipped bag's own icon (Blizzard style)")
   -- Keyring (only on clients that have one): MIRROR the held keys as a typed run, occupied slots only.
   -- Off by default. The keyring itself is never ours: its button and keybind always open Blizzard's.
   local P = ns.Client.Active()

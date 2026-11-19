@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Empty special-bag slots now show **item-type art** (herb, arrow, soul shard, leather, ...) by default; the equipped
+  bag's own icon is still available in Settings > Bag types.
 - **Fix: profession bags in normal bag slots were drawn as general slots.** On Forever,
   `GetContainerNumFreeSlots` reports a bag family of 0 for some profession bags (Apprentice's Skinning
   Satchel) while others (mining) report correctly. The bag's own item class/subclass is now the fallback,
