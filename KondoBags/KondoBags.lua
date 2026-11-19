@@ -246,6 +246,19 @@ local function Slash(msg)
     -- Debug: the Shift-insert point under the mouse (hold Shift with an item on the cursor).
     Print("insert: %s", ns.Window.DebugInsertPoint and ns.Window.DebugInsertPoint() or "n/a")
   elseif cmd == "cd" then
+  elseif cmd == "bags" then
+    -- Debug: per container, the raw API mask, the decoded KondoBags_BagFamilySet and the kind drawn.
+    -- An "unknown:<bit>" family here = a Forever bag family missing from Client.FAMILY_BY_BIT.
+    local P = ns.Client.Active()
+    for _, bag in ipairs(P.BagIDs()) do
+      local _, mask = P.FreeSlots(bag)
+      local fams = {}
+      for fam in pairs(P.BagFamilySet and P.BagFamilySet(bag) or {}) do fams[#fams + 1] = fam end
+      table.sort(fams)
+      Print("[bag %d] slots=%d mask=%s families={%s} kind=%s", bag, P.NumSlots(bag), tostring(mask),
+        table.concat(fams, ","), tostring(P.BagKind(bag)))
+    end
+  elseif cmd == "cd" then
     -- Debug: what GetContainerItemCooldown says for every occupied slot (why no sweep?).
     local P = ns.Client.Active()
     for _, bag in ipairs(P.BagIDs()) do
@@ -267,7 +280,7 @@ local function Slash(msg)
     if kind ~= "item" then Print("cursor: nothing carried"); return end
     local fam = ns.Client.Active().ItemFamily(link or itemID)
     local fits = {}
-    for _, k in ipairs({ "quiver", "ammo", "soul", "herb", "enchanting", "mining", "keyring", "reagent" }) do
+    for _, k in ipairs({ "quiver", "ammo", "soul", "herb", "enchanting", "mining", "leatherworking", "engineering", "inscription", "gem", "keyring", "general" }) do
       fits[#fits + 1] = k .. "=" .. (ns.Client.ItemFitsKind(fam, k) and "yes" or "no")
     end
     Print("cursor: %s family=%s | %s", tostring(link or itemID), tostring(fam), table.concat(fits, " "))

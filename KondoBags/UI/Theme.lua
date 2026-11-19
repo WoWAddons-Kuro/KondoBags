@@ -41,6 +41,12 @@ Theme.DEFAULT_KIND_TINT = {
   mining     = { 0.70, 0.60, 0.40, 0.55 },   -- brown/bronze
   keyring    = { 0.85, 0.80, 0.30, 0.55 },   -- gold
   reagent    = { 0.30, 0.80, 0.80, 0.55 },   -- teal
+  leatherworking = { 0.75, 0.45, 0.25, 0.55 },   -- leather brown
+  inscription    = { 0.55, 0.55, 0.85, 0.55 },   -- ink violet
+  engineering    = { 0.80, 0.80, 0.80, 0.55 },   -- steel grey
+  gem            = { 0.90, 0.35, 0.55, 0.55 },   -- ruby pink
+  fishing        = { 0.35, 0.65, 0.85, 0.55 },   -- water blue
+  cooking        = { 0.90, 0.70, 0.35, 0.55 },   -- warm amber
 }
 
 function Theme.Register(theme)

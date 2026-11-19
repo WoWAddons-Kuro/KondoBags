@@ -433,6 +433,27 @@ test("Client.KindFromFamily: lowest set bit wins; 0/nil = general; unknown bits 
   eq(K(256), "keyring"); eq(K(1024), "mining")
   eq(K(32 + 1024), "herb", "multi-bit mask: lowest bit")
   eq(K(2048), "general", "item-only flag on a bag is not a kind")
+  eq(K(33554432), "leatherworking", "Forever 2^25 = leatherworking bag (Skinning Satchel)")
+end)
+
+test("Client.DecodeFamilyMask: bitmask -> family set; item-only bits dropped; unknown bits named, not swallowed", function()
+  local D = ns.Client.DecodeFamilyMask
+  ok(next(D(0)) == nil); ok(next(D(nil)) == nil)
+  ok(D(1).quiver); ok(D(32 + 1024).herb and D(32 + 1024).mining, "multi-bit mask = both families")
+  ok(D(8).leatherworking and D(2 ^ 25).leatherworking, "classic 2^3 and Forever 2^25 are both leatherworking")
+  ok(next(D(2048)) == nil, "item-only flag decodes to nothing")
+  ok(D(2 ^ 27)["unknown:" .. 2 ^ 27], "unmapped bag bit surfaces as unknown:<bit>")
+  eq(ns.Client.KindFromFamily(2 ^ 27), "unknown:" .. 2 ^ 27, "and is still a typed kind, not general")
+end)
+
+test("Client.ResolveBagFamilySet: API mask wins; else the bag item's class/subclass (Forever reports 0 for some bags)", function()
+  local R = function(...) return ns.Client.KindFromFamilySet(ns.Client.ResolveBagFamilySet(...)) end
+  eq(R(1024, 1, 7), "mining", "API mask trusted when non-zero, even if the item says otherwise")
+  eq(R(0, 1, 7), "leatherworking"); eq(R(0, 1, 6), "mining"); eq(R(0, 1, 2), "herb"); eq(R(0, 1, 1), "soul")
+  eq(R(0, 1, 0), "general", "plain Bag subclass"); eq(R(0, 11, 2), "quiver"); eq(R(0, 11, 3), "ammo")
+  eq(R(0, 4, 1), "general", "not a container at all"); eq(R(nil, nil, nil), "general")
+  ok(ns.Client.ItemFitsKind(8, "leatherworking"), "skinning knife (classic LW family) fits a LW bag")
+  ok(ns.Client.ItemFitsKind(2 ^ 25, "leatherworking"), "Forever LW family fits too")
 end)
 
 test("Client.ItemFitsKind: general takes all; a typed slot takes only items carrying its family bit", function()

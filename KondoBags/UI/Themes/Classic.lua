@@ -52,15 +52,18 @@ ns.Theme.Register({
   kindGlyph = {
     quiver     = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",       desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     ammo       = { file = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Ammo",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
-
-
-
     soul       = { file = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     herb       = { file = "Interface\\Icons\\INV_Misc_Herb_01",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     enchanting = { file = "Interface\\Icons\\INV_Enchant_DustIllusion", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     mining     = { file = "Interface\\Icons\\INV_Pick_02",             desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     keyring    = { file = "Interface\\Icons\\INV_Misc_Key_14",         desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
     reagent    = { file = "Interface\\Icons\\INV_Misc_Dust_02",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    leatherworking = { file = "Interface\\Icons\\INV_Misc_LeatherScrap_02", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    inscription    = { file = "Interface\\Icons\\INV_Inscription_Tradeskill01", desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    engineering    = { file = "Interface\\Icons\\INV_Misc_Gear_01",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    gem            = { file = "Interface\\Icons\\INV_Misc_Gem_Ruby_01",    desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    fishing        = { file = "Interface\\Icons\\INV_Fishingpole_02",      desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
+    cooking        = { file = "Interface\\Icons\\INV_Misc_Food_15",        desaturate = true, alpha = 0.4, inset = 2, tint = 0.9 },
   },
   kindTint = ns.Theme.DEFAULT_KIND_TINT,
   divider = nil,

@@ -42,8 +42,20 @@ end
 
 function P.BagKind(bag)
   if KEYRING_CONTAINER and bag == KEYRING_CONTAINER then return "keyring" end
-  local _, family = P.FreeSlots(bag)
-  return Client.KindFromFamily(family)
+  return Client.KindFromFamilySet(P.BagFamilySet(bag))
+end
+
+-- KondoBags_BagFamilySet; container API mask decoded, bag item class/subclass as fallback (same as Mainline).
+function P.BagFamilySet(bag)
+  local _, mask = P.FreeSlots(bag)
+  local classID, subClassID
+  if bag > 0 and C_Container.ContainerIDToInventoryID then
+    local inv = C_Container.ContainerIDToInventoryID(bag)
+    local itemID = inv and GetInventoryItemID("player", inv)
+    local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if itemID and getInstant then local _, _, _, _, _, c, s = getInstant(itemID); classID, subClassID = c, s end
+  end
+  return Client.ResolveBagFamilySet(mask, classID, subClassID)
 end
 
 -- Icon of the equipped bag itself (for empty-cell backdrops of typed bags); nil for the backpack / keyring.

@@ -8,6 +8,8 @@ local P = { name = "Mainline" }
 
 -- Every bag we draw, general first (flat-index order), then typed. Enum.BagIndex is the one
 -- numbering that is right on every client; Era's keyring is handled in Era.lua.
+-- Enum.BagIndex.ReagentBag (5) is the PROFESSION-BAG SLOT: on Forever it accepts ONLY profession /
+-- typed bags, never a general bag. Blizzard's name for it has nothing to do with a "reagent bag" kind.
 function P.BagIDs()
   local ids = {}
   local last = (Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag) or (NUM_TOTAL_EQUIPPED_BAG_SLOTS or NUM_BAG_SLOTS or 4)
@@ -24,15 +26,27 @@ function P.FreeSlots(bag)
   return free or 0, family or 0
 end
 
+-- Bag-family mask of the bag in container `bag`. The container API is the first word, but on Forever
+-- it reports 0 for some profession bags (Apprentice's Skinning Satchel; a mining bag reported 1024
+-- correctly, owner 2026-11-19), so the equipped bag ITEM's class/subclass is the fallback.
+-- KondoBags_BagFamilySet of the bag in container `bag`: the container API's mask decoded, with the
+-- equipped bag ITEM's class/subclass as the fallback when the mask is 0 for a non-general bag.
+function P.BagFamilySet(bag)
+  local _, mask = P.FreeSlots(bag)
+  local classID, subClassID
+  if bag > 0 and C_Container.ContainerIDToInventoryID then
+    local inv = C_Container.ContainerIDToInventoryID(bag)
+    local itemID = inv and GetInventoryItemID("player", inv)
+    local getInstant = (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant
+    if itemID and getInstant then local _, _, _, _, _, c, s = getInstant(itemID); classID, subClassID = c, s end
+  end
+  return Client.ResolveBagFamilySet(mask, classID, subClassID)
+end
+
 function P.BagKind(bag)
-  -- Family bits first: a bag with a family IS that kind wherever it sits. Enum.BagIndex.ReagentBag (5)
-  -- is the reagent-bag SLOT, but Forever lets a profession bag be equipped there; a herb bag in that
-  -- slot is a herb bag, not a reagent bag. Only a family-less bag in slot 5 is the actual reagent bag.
-  local _, family = P.FreeSlots(bag)
-  local kind = Client.KindFromFamily(family)
-  if kind ~= "general" then return kind end
-  if Enum and Enum.BagIndex and Enum.BagIndex.ReagentBag and bag == Enum.BagIndex.ReagentBag then return "reagent" end
-  return "general"
+  -- A bag IS its family, wherever it sits (slot 1-4 or the profession-bag slot). There is no slot-index
+  -- rule: the profession-bag slot only ever holds a typed bag, so its family set always answers.
+  return Client.KindFromFamilySet(P.BagFamilySet(bag))
 end
 
 -- Icon of the equipped bag itself (for empty-cell backdrops of typed bags); nil for the backpack / keyring.

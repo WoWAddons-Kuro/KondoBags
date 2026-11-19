@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fix: profession bags in normal bag slots were drawn as general slots.** On Forever,
+  `GetContainerNumFreeSlots` reports a bag family of 0 for some profession bags (Apprentice's Skinning
+  Satchel) while others (mining) report correctly. The bag's own item class/subclass is now the fallback,
+  so leatherworking / inscription / engineering / gem / fishing / cooking bags always land in the
+  special-bag strip, with their own border tint and empty-slot glyph. A leatherworking bag in the
+  profession-bag slot (Blizzard's "reagent" slot) is a leatherworking bag, not a reagent bag, so a
+  skinning knife is no longer marked as refused there. `/kondo bags` dumps what the API says per bag.
 - **Shift-insert.** Holding Shift while carrying an item shows a thin amber insert marker on the boundary
   nearest the mouse inside a section; dropping there inserts the item at that spot. Nothing in the grid moves
   and a Shift-drop never swaps. Works in combat (the redraw waits for combat to end). The old sliding
