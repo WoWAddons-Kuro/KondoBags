@@ -58,19 +58,22 @@ function BagState:Emit(event) for _, fn in ipairs(self.listeners) do fn(event, s
 -- cursor
 -- LIVE: the real cursor. The view calls this on CURSOR_CHANGED with the ref the cursor item came
 -- from (nil = empty cursor), or the string "external" for an item from outside the bag (bank, mail).
--- `heldFamily` = KondoBags_ItemFamilyBits of the carried item (C_Item.GetItemFamily; 0 = ordinary),
--- so the view can mark typed slots that would refuse it (Client.ItemFitsKind).
-function BagState:SetCursor(refOrExternal, heldFamily)
-  if self.held == refOrExternal and self.heldFamily == heldFamily then return end
+-- `heldFacts` = KondoBags_HeldItemFacts { familyMask, isReagent } of the carried item (provider
+-- ItemFacts), so the view can mark typed slots that would refuse it (Client.ItemFitsKind). A bare
+-- number (tests) is a familyMask with isReagent = false.
+function BagState:SetCursor(refOrExternal, heldFacts)
+  if type(heldFacts) ~= "table" then heldFacts = { familyMask = heldFacts or 0, isReagent = false } end
+  local same = self.heldFacts and self.heldFacts.familyMask == heldFacts.familyMask and self.heldFacts.isReagent == heldFacts.isReagent
+  if self.held == refOrExternal and (same or (not refOrExternal and not self.heldFacts)) then return end
   self.held = refOrExternal
-  self.heldFamily = refOrExternal and (heldFamily or 0) or nil
+  self.heldFacts = refOrExternal and heldFacts or nil
   self:Emit("cursor")
 end
 
 -- Would the carried item fit a slot of `kind`? Always true with nothing carried.
 function BagState:HeldFits(kind)
   if not self.held then return true end
-  return ns.Client.ItemFitsKind(self.heldFamily, kind)
+  return ns.Client.ItemFitsKind(self.heldFacts, kind)
 end
 
 -- ---------------------------------------------------------------------------

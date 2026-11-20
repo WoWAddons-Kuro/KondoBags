@@ -72,6 +72,18 @@ function P.ItemFamily(itemIDOrLink)
   return fn and fn(itemIDOrLink) or 0
 end
 
+-- Era has no reagent bag; same probe as Mainline so the facts table is shaped identically.
+function P.IsCraftingReagent(itemIDOrLink)
+  if not itemIDOrLink then return false end
+  if C_Item and C_Item.IsItemCraftingReagent then return C_Item.IsItemCraftingReagent(itemIDOrLink) and true or false end
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if not getInfo then return false end
+  return select(17, getInfo(itemIDOrLink)) and true or false
+end
+function P.ItemFacts(itemIDOrLink)
+  return { familyMask = P.ItemFamily(itemIDOrLink), isReagent = P.IsCraftingReagent(itemIDOrLink) }
+end
+
 function P.SlotInfo(bag, slot)
   local info = C_Container.GetContainerItemInfo(bag, slot)
   if not info then return nil end

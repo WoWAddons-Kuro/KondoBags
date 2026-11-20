@@ -63,6 +63,21 @@ function P.ItemFamily(itemIDOrLink)
   return fn and fn(itemIDOrLink) or 0
 end
 
+-- Is the item a crafting reagent (what the Retail-style reagent bag accepts)? The tooltip flag
+-- "Crafting Reagent": C_Item.IsItemCraftingReagent where it exists, else GetItemInfo return 17.
+function P.IsCraftingReagent(itemIDOrLink)
+  if not itemIDOrLink then return false end
+  if C_Item and C_Item.IsItemCraftingReagent then return C_Item.IsItemCraftingReagent(itemIDOrLink) and true or false end
+  local getInfo = (C_Item and C_Item.GetItemInfo) or GetItemInfo
+  if not getInfo then return false end
+  return select(17, getInfo(itemIDOrLink)) and true or false
+end
+
+-- KondoBags_HeldItemFacts for the fit test (Client.ItemFitsKind): everything it needs about one item.
+function P.ItemFacts(itemIDOrLink)
+  return { familyMask = P.ItemFamily(itemIDOrLink), isReagent = P.IsCraftingReagent(itemIDOrLink) }
+end
+
 -- nil for an empty slot. `name` can be nil the first time an item is seen; the scanner fills it later.
 function P.SlotInfo(bag, slot)
   local info = C_Container.GetContainerItemInfo(bag, slot)

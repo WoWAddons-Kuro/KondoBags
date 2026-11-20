@@ -456,6 +456,17 @@ test("Client.ResolveBagFamilySet: API mask wins; else the bag item's class/subcl
   ok(ns.Client.ItemFitsKind(2 ^ 25, "leatherworking"), "Forever LW family fits too")
 end)
 
+test("reagent bag: Container subclass 11 -> kind reagent; fit is by isReagent, never by family bits", function()
+  local R = function(...) return ns.Client.KindFromFamilySet(ns.Client.ResolveBagFamilySet(...)) end
+  eq(R(0, 1, 11), "reagent", "Linen Reagent Bag (mask 0, class 1 / sub 11)")
+  local F = ns.Client.ItemFitsKind
+  ok(F({ familyMask = 0, isReagent = true }, "reagent"), "Linen Cloth (no family) is a crafting reagent")
+  ok(F({ familyMask = 64, isReagent = true }, "reagent"), "Strange Dust (enchanting family) is a reagent too")
+  ok(not F({ familyMask = 0, isReagent = false }, "reagent"), "a potion is not")
+  ok(not F(0, "reagent"), "bare mask (tests) = not a reagent")
+  ok(not F({ familyMask = 0, isReagent = true }, "herb"), "reagent-ness does not open family bags")
+end)
+
 test("Client.ItemFitsKind: general takes all; a typed slot takes only items carrying its family bit", function()
   local F = ns.Client.ItemFitsKind
   ok(F(0, "general")); ok(F(nil, "general")); ok(F(1, nil))

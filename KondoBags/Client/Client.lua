@@ -101,11 +101,15 @@ end
 -- Fallback: bag ITEM class/subclass -> KondoBags_BagFamily, for a client that reports mask 0 for a
 -- bag that is not general. Enum.ItemClass.Container (1) and Enum.ItemClass.Quiver (11) subclasses per
 -- the ItemSubClass DBC. nil = plain bag / not a bag.
+-- Subclass 11 is the Retail-style REAGENT BAG ("6 Slot Reagent Bag", Forever item 253664, owner
+-- 2026-11-20): it holds crafting reagents and has NO ItemBagFamily bit, so this is its only source.
+-- "reagent" is therefore a KondoBags_BagFamily defined by the bag's type, never by which slot it sits in.
 Client.ITEM_CLASS_CONTAINER = 1
 Client.ITEM_CLASS_QUIVER    = 11
 Client.FAMILY_BY_CONTAINER_SUBCLASS = {
   [1] = "soul", [2] = "herb", [3] = "enchanting", [4] = "engineering", [5] = "gem",
   [6] = "mining", [7] = "leatherworking", [8] = "inscription", [9] = "fishing", [10] = "cooking",
+  [11] = "reagent",
 }
 Client.FAMILY_BY_QUIVER_SUBCLASS = { [2] = "quiver", [3] = "ammo" }
 function Client.FamilyFromBagItemClass(classID, subClassID)
@@ -124,13 +128,17 @@ function Client.ResolveBagFamilySet(apiMask, classID, subClassID)
   return set
 end
 
--- Does an item whose C_Item.GetItemFamily mask is `itemMask` fit a slot drawn as `kind`?
--- General slots take anything. A typed slot takes the item only if the item's decoded family set
--- contains that kind (a Quiver takes arrows, never thrown weapons or herbs). nil/0 = ordinary item =
--- refused by every typed slot. Pure Lua (tests).
-function Client.ItemFitsKind(itemMask, kind)
+-- Does a carried item fit a slot drawn as `kind`?
+--   held = KondoBags_HeldItemFacts = { familyMask = KondoBags_FamilyMask, isReagent = bool }
+-- General slots take anything. A family slot takes the item only if the item's decoded family set
+-- contains that kind (a Quiver takes arrows, never thrown weapons or herbs). The reagent bag has no
+-- family bit: it takes the item iff the provider says it is a crafting reagent (isReagent). Pure Lua.
+-- Back-compat: a bare number is treated as { familyMask = n, isReagent = false }.
+function Client.ItemFitsKind(held, kind)
   if not kind or kind == "general" then return true end
-  return Client.DecodeFamilyMask(itemMask)[kind] == true
+  if type(held) ~= "table" then held = { familyMask = held or 0, isReagent = false } end
+  if kind == "reagent" then return held.isReagent == true end
+  return Client.DecodeFamilyMask(held.familyMask)[kind] == true
 end
 
 -- Charges left on a charge-based item (Bag of Marbles "10 Charges"); nil when the item has none.

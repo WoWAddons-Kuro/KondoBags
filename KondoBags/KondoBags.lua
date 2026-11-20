@@ -87,10 +87,10 @@ local function SyncCursor()
   if not liveBag then return end
   local kind, itemID, itemLink = GetCursorInfo()
   if kind ~= "item" then liveBag:SetCursor(nil); return end
-  -- Family bits of the carried item: the view marks typed slots that would refuse it.
-  local family = ns.Client.Active().ItemFamily(itemLink or itemID)
+  -- KondoBags_HeldItemFacts of the carried item: the view marks typed slots that would refuse it.
+  local facts = ns.Client.Active().ItemFacts(itemLink or itemID)
   local ref = lastLocked and RefForBagSlot(lastLocked.bagID, lastLocked.slot)
-  if ref and ref.item and ref.item.locked then liveBag:SetCursor(ref, family) else liveBag:SetCursor("external", family) end
+  if ref and ref.item and ref.item.locked then liveBag:SetCursor(ref, facts) else liveBag:SetCursor("external", facts) end
 end
 local function OnItemLockChanged(bagID, slot)
   if not liveBag or not slot then return end
@@ -278,15 +278,15 @@ local function Slash(msg)
     -- Debug: what the client says about the carried item vs each typed bag kind.
     local kind, itemID, link = GetCursorInfo()
     if kind ~= "item" then Print("cursor: nothing carried"); return end
-    local fam = ns.Client.Active().ItemFamily(link or itemID)
+    local facts = ns.Client.Active().ItemFacts(link or itemID)
     local fits = {}
-    for _, k in ipairs({ "quiver", "ammo", "soul", "herb", "enchanting", "mining", "leatherworking", "engineering", "inscription", "gem", "keyring", "general" }) do
-      fits[#fits + 1] = k .. "=" .. (ns.Client.ItemFitsKind(fam, k) and "yes" or "no")
+    for _, k in ipairs({ "quiver", "ammo", "soul", "herb", "enchanting", "mining", "leatherworking", "engineering", "inscription", "gem", "keyring", "reagent", "general" }) do
+      fits[#fits + 1] = k .. "=" .. (ns.Client.ItemFitsKind(facts, k) and "yes" or "no")
     end
-    Print("cursor: %s family=%s | %s", tostring(link or itemID), tostring(fam), table.concat(fits, " "))
+    Print("cursor: %s familyMask=%s isReagent=%s | %s", tostring(link or itemID), tostring(facts.familyMask), tostring(facts.isReagent), table.concat(fits, " "))
     local b = liveBag
-    Print("  BagState: held=%s heldFamily=%s HeldFits(herb)=%s | marked cells: %s", b and tostring(b.held) or "-",
-      b and tostring(b.heldFamily) or "-", b and tostring(b:HeldFits("herb")) or "-", ns.Window.DebugNoDrop())
+    Print("  BagState: held=%s HeldFits(herb)=%s HeldFits(reagent)=%s | marked cells: %s", b and tostring(b.held) or "-",
+      b and tostring(b:HeldFits("herb")) or "-", b and tostring(b:HeldFits("reagent")) or "-", ns.Window.DebugNoDrop())
   elseif cmd == "dump" then
     -- Debug: every occupied slot with what the client APIs say about it (quest info, class, family).
     -- `/kondo dump <text>` limits to items whose name contains <text>.

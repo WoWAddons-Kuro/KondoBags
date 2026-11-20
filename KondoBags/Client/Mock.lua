@@ -35,6 +35,8 @@ function Client.NewMock(refs)
     return { itemID = it.itemID, link = nil, icon = it.icon, count = it.count or 1, quality = it.quality or 1, locked = false, name = it.name }
   end
   function P.ItemFamily(itemIDOrLink) return P.families and P.families[itemIDOrLink] or 0 end   -- tests set P.families
+  function P.IsCraftingReagent(itemIDOrLink) return P.reagents and P.reagents[itemIDOrLink] or false end   -- tests set P.reagents
+  function P.ItemFacts(itemIDOrLink) return { familyMask = P.ItemFamily(itemIDOrLink), isReagent = P.IsCraftingReagent(itemIDOrLink) } end
   function P.QuestInfo(bag, slot)
     local ref = byBag[bag] and byBag[bag].slots[slot]
     return ref and ref.item and ref.item.quest or nil
