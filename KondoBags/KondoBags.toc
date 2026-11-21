@@ -2,7 +2,7 @@
 ## Title: Kondo Bags
 ## Notes: The stock bag plus Keep rows. Drop an item on a lock cell to keep it there.
 ## Author: Kuro
-## Version: v2026.11.20.2349
+## Version: @project-version@
 ## SavedVariables: KondoBagsDB
 ## SavedVariablesPerCharacter: KondoBagsCharDB
 ## OptionalDeps: LibStub, LibEditMode
