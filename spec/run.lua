@@ -618,6 +618,25 @@ test("adopt: sibling only in incoming -> nothing; kept sibling FIRST in its grou
   eq(table.concat(bag.store.list[1].order, ","), "2,5", "new slot in front of a first-in-group sibling")
 end)
 
+test("adopt: a stack the player drags OUT of Keep is NOT adopted back (nothing moves unless you move it)", function()
+  -- physical 6 bandage x17 and 7 bandage x20 kept; incoming 0..5 with 0,1 filled
+  local slots = Bag(9, { 0, 1, 6, 7, 8 })
+  slots[7].item = { itemID = 2581, name = "Bandage", count = 17 }
+  slots[8].item = { itemID = 2581, name = "Bandage", count = 20 }
+  local bag = B.New({ store = KeepStore({ 6, 7, 8 }), slots = slots, columns = 7 })
+  local prev = {}
+  for i, r in ipairs(bag.slots) do if r.item then prev[i - 1] = r.item.itemID end end
+  -- player drags the x20 stack from kept slot 7 onto empty incoming slot 2: Blizzard places it there
+  slots[3].item = slots[8].item; slots[8].item = nil
+  bag:SetSlots(slots)                                             -- Reconcile drops the emptied kept slot 7
+  ok(not S.IsKept(bag.store, 7), "emptied kept slot left Keep")
+  -- what KondoBags.lua computes: itemIDs that left a kept slot this scan
+  eq(S.AdoptNewStacks(bag.store, prev, bag.slots, bag:IsFreeFn(), { [2581] = true }), 0, "unpin stands")
+  ok(not S.IsKept(bag.store, 2), "the moved stack is loose in incoming")
+  -- and WITHOUT the exclusion it would have snapped back (the bug)
+  eq(S.AdoptNewStacks(bag.store, prev, bag.slots, bag:IsFreeFn()), 1)
+end)
+
 -- ---------------------------------------------------------------------------
 for _, t in ipairs(tests) do
   local okRun, err = pcall(t.fn)

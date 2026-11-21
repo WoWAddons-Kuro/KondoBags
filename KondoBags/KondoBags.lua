@@ -191,11 +191,25 @@ local function OnBagsChanged()
     return
   end
   dirty = false
+  -- Which slots were KEPT before this scan. Compared against prevItemIDs after the scan to find
+  -- itemIDs the player just dragged OUT of Keep -- those must not be adopted straight back in.
+  local prevKept = {}
+  for slot in pairs(liveBag.store.kept) do prevKept[slot] = true end
   liveBag:SetSlots(LiveScan())
   -- Newly filled slots whose item is already KEPT somewhere join that group next to the sibling
   -- (SPECS/00 "Stack adoption"). Map edit only; the loot stays where Blizzard put it.
+  -- EXCEPT: "nothing moves unless you move it". If the player dragged a stack out of Keep onto an
+  -- empty incoming cell, that is a deliberate unpin, not loot, even though it looks identical to
+  -- the adoption rule (empty slot -> now holds an itemID a kept sibling also holds). Any itemID that
+  -- left a kept slot this scan is excluded from adoption so the move sticks.
   if KondoBagsDB.stackAdjacent and prevItemIDs then
-    local n = ns.Sections.AdoptNewStacks(liveBag.store, prevItemIDs, liveBag.slots, liveBag:IsFreeFn())
+    local leftKeep = {}
+    for slot in pairs(prevKept) do
+      local was = prevItemIDs[slot]
+      local ref = liveBag.slots[slot + 1]
+      if was and not (ref and ref.item and ref.item.itemID == was) then leftKeep[was] = true end
+    end
+    local n = ns.Sections.AdoptNewStacks(liveBag.store, prevItemIDs, liveBag.slots, liveBag:IsFreeFn(), leftKeep)
     if n > 0 then liveBag:Emit("changed") end
   end
   prevItemIDs = SnapshotItemIDs(liveBag)
@@ -215,10 +229,7 @@ end
 -- ---------------------------------------------------------------------------
 -- slash
 -- ---------------------------------------------------------------------------
-local function Slash(msg)
-  msg = (msg or ""):match("^%s*(.-)%s*$")
-  local cmd, rest = msg:match("^(%S*)%s*(.-)$")
-  cmd = cmd:lower()
+local function Dispatch(cmd, rest)
   if cmd == "" or cmd == "toggle" then
     ns.ToggleBags()
   elseif cmd == "theme" then
@@ -333,6 +344,19 @@ local function Slash(msg)
   else
     Print("/kondo - toggle bags | theme [classic|modern] | columns N | tint | reset | options | status")
   end
+end
+
+-- Report-style commands (multi-line text output) are bracketed with start/end headers so a paste of
+-- the chat log reads unambiguously: which command, where it begins, where it ends.
+local REPORT_CMDS = { bags = true, cd = true, cursor = true, dump = true, status = true, insert = true }
+local function Slash(msg)
+  msg = (msg or ""):match("^%s*(.-)%s*$")
+  local cmd, rest = msg:match("^(%S*)%s*(.-)$")
+  cmd = cmd:lower()
+  local report = REPORT_CMDS[cmd]
+  if report then Print("======= start: /kondo %s ========================", msg) end
+  Dispatch(cmd, rest)
+  if report then Print("======= end: /kondo %s ==========================", msg) end
 end
 
 -- ---------------------------------------------------------------------------

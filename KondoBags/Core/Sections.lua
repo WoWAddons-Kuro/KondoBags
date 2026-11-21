@@ -207,10 +207,20 @@ end
 -- of the sibling. Pure map edit, zero server ops: the loot stays in the physical slot Blizzard
 -- chose; we only change where it is drawn. Loot whose siblings are all in incoming is left alone
 -- (incoming is physical order, there is nothing to remap to).
+--
+-- Only LOOT is adopted -- NEVER something the player just moved. The addon's whole promise is
+-- "nothing moves unless you move it": when the player drags a stack OUT of Keep onto an empty
+-- incoming cell they did it on purpose (to use it up, sell it, give it away, or simply because they
+-- want it loose), and the bag must let it go. But to this function that gesture looks exactly like
+-- loot: a previously-empty slot now holds an itemID that a kept sibling also holds. Without
+-- `exclude` the unpin was silently re-pinned and the item snapped back into Keep (17 + 20 bandages,
+-- 2026-11-20) -- the one thing this addon must never do. So the caller passes the itemIDs that LEFT
+-- a kept slot this scan, and those are never adopted; the player's move stands.
 --   prevItemIDs: { [KondoBags_SlotIndex] = itemID }  of the previous scan (nil = first scan; no-op)
 --   slots:       { KondoBags_SlotRef... }            current scan, index i = slot i-1
+--   exclude:     { [itemID] = true } or nil           itemIDs that left Keep this scan (player unpin)
 -- Returns the number of slots adopted.
-function Sections.AdoptNewStacks(store, prevItemIDs, slots, isFree)
+function Sections.AdoptNewStacks(store, prevItemIDs, slots, isFree, exclude)
   if not prevItemIDs then return 0 end
   -- itemID -> first KEPT slot holding it, in display order (store.list, then group.order)
   local keptByItem = {}
@@ -226,7 +236,7 @@ function Sections.AdoptNewStacks(store, prevItemIDs, slots, isFree)
   for i, ref in ipairs(slots) do
     local slot = i - 1
     local id = ref.item and ref.item.itemID
-    if id and prevItemIDs[slot] == nil and not store.kept[slot] then        -- newly filled, still incoming
+    if id and prevItemIDs[slot] == nil and not store.kept[slot] and not (exclude and exclude[id]) then  -- newly filled, still incoming, not an unpin
       local sibling = keptByItem[id]
       if sibling and sibling ~= slot then
         local group = Sections.GroupOfSlot(store, sibling)
